@@ -34,11 +34,6 @@ extern bool buzzerMuted;
 extern int64_t muteStartTime;
 
 extern "C" void app_main()
-{
-    /* =========================
-       CONFIGURARE I2C
-    ========================== */
-
     i2c_config_t conf{};
 
     conf.mode = I2C_MODE_MASTER;
@@ -64,10 +59,6 @@ extern "C" void app_main()
         0
     );
 
-    /* =========================
-       INITIALIZARE SENZORI
-    ========================== */
-
     Mpu6050 mpu(I2C_NUM_0);
     mpu.Init();
 
@@ -86,15 +77,7 @@ extern "C" void app_main()
     Buzzer buzzer(BUZZER_PIN);
     buzzer.init();
 
-    /* =========================
-       CONECTARE WIFI
-    ========================== */
-
     wifi_init();
-
-    /* =========================
-       VARIABILE SISTEM
-    ========================== */
 
     int servo_angle = 0;
 
@@ -108,16 +91,7 @@ extern "C" void app_main()
 
     static bool temperatureWasHigh = false;
 
-    /* =========================
-       LOOP PRINCIPAL
-    ========================== */
-
     while (true)
-    {
-        /* =========================
-           CITIRE GIROSCOP
-        ========================== */
-
         int16_t gx, gy, gz;
 
         mpu.ReadGyro(
@@ -132,10 +106,6 @@ extern "C" void app_main()
             gy,
             gz
         );
-
-        /* =========================
-           CITIRE TEMPERATURA
-        ========================== */
 
         float temp = 0;
 
@@ -154,10 +124,6 @@ extern "C" void app_main()
             "TEMP: %.2f C | ",
             temp
         );
-
-        /* =========================
-           CITIRE DISTANTA
-        ========================== */
 
         float dist =
             sonar.read();
@@ -181,15 +147,7 @@ extern "C" void app_main()
             );
         }
 
-        /* =========================
-           VERIFICARE COMENZI
-        ========================== */
-
         checkCommand();
-
-        /* =========================
-           RESET MUTE DUPA 10 SEC
-        ========================== */
 
         if (buzzerMuted)
         {
@@ -207,10 +165,6 @@ extern "C" void app_main()
                 );
             }
         }
-
-        /* =========================
-           CONTROL BUZZER
-        ========================== */
 
         if (
             temp >= 30 &&
@@ -230,10 +184,6 @@ extern "C" void app_main()
             buzzer.off();
         }
 
-        /* =========================
-           RESET ALARMA
-        ========================== */
-
         if (
             temp < 30 &&
             temperatureWasHigh
@@ -247,10 +197,6 @@ extern "C" void app_main()
                 "TEMPERATURA NORMALA | RESET ALARMA | "
             );
         }
-
-        /* =========================
-           CONTROL SERVO AUTOMAT
-        ========================== */
 
         if (
             dist > 0 &&
@@ -271,10 +217,6 @@ extern "C" void app_main()
                 "OBIECT APROAPE -> SERVO 60 GRADE | "
             );
         }
-
-        /* =========================
-           RESET SERVO
-        ========================== */
 
         if (servoActive)
         {
@@ -297,10 +239,6 @@ extern "C" void app_main()
             }
         }
 
-        /* =========================
-           TRIMITERE TELEMETRIE
-        ========================== */
-
         sendTelemetry(
             temp,
             dist,
@@ -311,11 +249,7 @@ extern "C" void app_main()
         );
 
         printf("\n");
-
-        /* =========================
-           REFRESH SISTEM
-        ========================== */
-
+        
         vTaskDelay(
             pdMS_TO_TICKS(100)
         );
