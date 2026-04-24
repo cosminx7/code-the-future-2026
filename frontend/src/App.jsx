@@ -1,95 +1,66 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
-// ─── HOOK TELEMETRIE MOCK ───────────────────────────────────────────────────
 function useTelemetry() {
   const [data, setData] = useState({
-    temperature: 27, humidity: 40, distance: 100,
-    orientation: "STABIL", state: "STABIL", risk: "SCĂZUT",
-    decision: "Toate sistemele sunt nominale. Telemetrie în parametrii așteptați.",
-    gyro: { x: 0.1, y: -0.2, z: 0.05 },
-    servo: { pan: 90, tilt: 45 },
-    uptime: 0,
+    temperature: 0,
+    orientation: "STABLE",
+    gx: 0,
+    gy: 0,
+    gz: 0,
+    state: "STABLE",
+    risk: "LOW",
+    decision: "",
   });
-  const [history, setHistory] = useState({ temp: [], dist: [] });
-  const [connected, setConnected] = useState(true);
-  const tick = useRef(0);
 
-  const fetchTelemetry = useCallback(async () => {
-    tick.current++;
-    try {
-      const res = await fetch("http://127.0.0.1:5000/telemetry", { signal: AbortSignal.timeout(900) });
-      const json = await res.json();
-      setConnected(true);
-      setData(prev => ({ ...prev, ...json, uptime: prev.uptime + 1 }));
-      setHistory(prev => ({
-        temp: [...prev.temp.slice(-39), json.temperature ?? 27],
-        dist: [...prev.dist.slice(-39), json.distance ?? 100],
-      }));
-    } catch {
-      // Simulare date live dacă backend-ul nu este accesibil
-      setData(prev => {
-        const t = tick.current;
-        const temp = 24 + Math.sin(t * 0.08) * 6 + Math.random() * 1.5;
-        const dist = 40 + Math.abs(Math.sin(t * 0.05) * 80) + Math.random() * 10;
-        const gx = Math.sin(t * 0.07) * 3;
-        const gy = Math.cos(t * 0.09) * 2;
-        const gz = Math.sin(t * 0.11) * 1.5;
-        const state = temp > 34 ? "CRITIC" : temp > 30 ? "AVERTIZARE" : dist < 25 ? "AVERTIZARE" : "STABIL";
-        const decisions = {
-          STABIL: [
-            "Toate sistemele sunt nominale. Telemetrie în parametrii așteptați.",
-            "Traiectorie orbitală confirmată stabilă. Nicio anomalie detectată.",
-            "Senzorii funcționează la 98.7% eficiență. Nominal."
-          ],
-          AVERTIZARE: [
-            "Pragul de temperatură se apropie. Se activează reglarea termică.",
-            "Alertă de proximitate detectată. Protocol de evitare a coliziunii activat.",
-            "Derivă orbitală detectată. Secvență de corecție autonomă inițiată."
-          ],
-          CRITIC: [
-            "CRITIC: Supraîncălzire termică iminentă. Răcire de urgență activată.",
-            "CRITIC: Risc de coliziune RIDICAT. Manevră de evitare inițiată.",
-            "CRITIC: Avertizare integritate structurală. Protocoale de siguranță activate."
-          ],
-        };
-        const msgs = decisions[state];
-        return {
-          ...prev,
-          temperature: +temp.toFixed(1),
-          humidity: +(40 + Math.sin(t * 0.06) * 10).toFixed(1),
-          distance: +dist.toFixed(1),
-          orientation: Math.abs(gx) > 2 || Math.abs(gy) > 1.5 ? "INSTABIL" : "STABIL",
-          state,
-          risk: dist < 25 || temp > 34 ? "RIDICAT" : dist < 50 ? "MEDIU" : "SCĂZUT",
-          decision: msgs[Math.floor(t / 5) % msgs.length],
-          gyro: { x: +gx.toFixed(2), y: +gy.toFixed(2), z: +gz.toFixed(2) },
-          servo: { pan: +(90 + Math.sin(t * 0.04) * 30).toFixed(1), tilt: +(45 + Math.cos(t * 0.06) * 20).toFixed(1) },
-          uptime: prev.uptime + 1,
-        };
-      });
-      setHistory(prev => {
-        const t = tick.current;
-        const temp = 24 + Math.sin(t * 0.08) * 6 + Math.random() * 1.5;
-        const dist = 40 + Math.abs(Math.sin(t * 0.05) * 80) + Math.random() * 10;
-        return {
-          temp: [...prev.temp.slice(-39), +temp.toFixed(1)],
-          dist: [...prev.dist.slice(-39), +dist.toFixed(1)],
-        };
-      });
-      setConnected(false);
-    }
-  }, []);
+  const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    fetchTelemetry();
-    const id = setInterval(fetchTelemetry, 1000);
-    return () => clearInterval(id);
-  }, [fetchTelemetry]);
 
-  return { data, history, connected };
+    const fetchTelemetry = async () => {
+
+      try {
+
+        const res = await fetch(
+          "http://172.20.10.13:5000/telemetry"
+        );
+
+        const json = await res.json();
+
+        console.log("DATE REALE:", json);
+
+        setData(json);
+
+        setConnected(true);
+
+      } catch (err) {
+
+        console.log("EROARE:", err);
+
+        setConnected(false);
+      }
+    };
+
+    fetchTelemetry();
+
+    const interval = setInterval(
+      fetchTelemetry,
+      1000
+    );
+
+    return () => clearInterval(interval);
+
+  }, []);
+
+  return {
+    data,
+    connected,
+    history: {
+      temp: [],
+      dist: []
+    }
+  };
 }
 
-// ─── PALETĂ CULORI ──────────────────────────────────────────────────────────
 function getStateColors(state) {
   switch (state) {
     case "CRITIC": return { primary: "#ff2244", secondary: "#ff6680", glow: "rgba(255,34,68,0.4)", dim: "rgba(255,34,68,0.08)", border: "rgba(255,34,68,0.5)" };
@@ -98,7 +69,7 @@ function getStateColors(state) {
   }
 }
 
-// ─── STILURI ────────────────────────────────────────────────────────────────
+
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Share+Tech+Mono&family=Rajdhani:wght@300;400;500;600;700&display=swap');
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -116,7 +87,7 @@ const css = `
   @keyframes radar-sweep{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
   @keyframes scanline{0%{transform:translateY(-100%)}100%{transform:translateY(100vh)}}
   @keyframes blink-crit{0%,100%{opacity:1}50%{opacity:0.15}}
-  @keyframes ticker{0%{transform:translateX(100%)}100%{transform:translateX(-100%)}}
+  @keyframes ticker{0%{transform:translateX(50%)}100%{transform:translateX(-100%)}}
   @keyframes grid-move{0%{background-position:0 0}100%{background-position:60px 60px}}
   @keyframes earth-rotate{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
   @keyframes atmo-pulse{0%,100%{opacity:0.6;transform:scale(1)}50%{opacity:0.9;transform:scale(1.01)}}
@@ -133,7 +104,6 @@ const css = `
   .glass-crit{background:rgba(255,34,68,0.05);backdrop-filter:blur(16px);border:1px solid rgba(255,34,68,0.25);border-radius:12px}
 `;
 
-// ─── FUNDAL PĂMÂNT ──────────────────────────────────────────────────────────
 function EarthBackground({ state }) {
   const canvasRef = useRef(null);
   const starsRef = useRef(Array.from({ length: 200 }, () => ({
@@ -157,34 +127,28 @@ function EarthBackground({ state }) {
       const { width: W, height: H } = canvas;
       ctx.clearRect(0, 0, W, H);
 
-      // Deep space bg
       const bg = ctx.createRadialGradient(W * 0.3, H * 0.2, 0, W * 0.3, H * 0.2, W * 1.2);
       bg.addColorStop(0, "#020a14"); bg.addColorStop(0.5, "#01050d"); bg.addColorStop(1, "#000000");
       ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
 
-      // Stars
       starsRef.current.forEach(s => {
         const tw = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(frame * 0.02 * s.speed + s.phase));
         ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(180,220,255,${tw})`; ctx.fill();
       });
 
-      // Nebula
       const neb = ctx.createRadialGradient(W * 0.7, H * 0.3, 0, W * 0.7, H * 0.3, W * 0.4);
       neb.addColorStop(0, "rgba(0,100,180,0.06)"); neb.addColorStop(0.5, "rgba(0,50,120,0.03)"); neb.addColorStop(1, "transparent");
       ctx.fillStyle = neb; ctx.fillRect(0, 0, W, H);
 
-      // Earth — bottom left
       const ex = W * 0.12, ey = H * 0.85, er = Math.min(W, H) * 0.45;
       const earthRot = (frame * 0.002) % (Math.PI * 2);
 
-      // Deep ocean base
       ctx.save(); ctx.beginPath(); ctx.arc(ex, ey, er, 0, Math.PI * 2);
       const oceanGrad = ctx.createRadialGradient(ex - er * 0.3, ey - er * 0.3, 0, ex, ey, er);
       oceanGrad.addColorStop(0, "#1a6fa8"); oceanGrad.addColorStop(0.5, "#0d4d7a"); oceanGrad.addColorStop(1, "#071e30");
       ctx.fillStyle = oceanGrad; ctx.fill(); ctx.restore();
 
-      // Continents (procedural blobs)
       ctx.save(); ctx.beginPath(); ctx.arc(ex, ey, er, 0, Math.PI * 2); ctx.clip();
       const landPieces = [
         { ox: 0.15, oy: -0.15, rx: 0.22, ry: 0.28 },
@@ -201,14 +165,12 @@ function EarthBackground({ state }) {
       });
       ctx.restore();
 
-      // Ice caps
       ctx.save(); ctx.beginPath(); ctx.arc(ex, ey, er, 0, Math.PI * 2); ctx.clip();
       const icePole = ctx.createRadialGradient(ex, ey - er * 0.7, 0, ex, ey - er * 0.7, er * 0.45);
       icePole.addColorStop(0, "rgba(200,230,255,0.9)"); icePole.addColorStop(1, "transparent");
       ctx.fillStyle = icePole; ctx.fillRect(ex - er, ey - er, er * 2, er * 0.7);
       ctx.restore();
 
-      // City lights on dark side
       ctx.save(); ctx.beginPath(); ctx.arc(ex, ey, er, 0, Math.PI * 2); ctx.clip();
       const dark = ctx.createLinearGradient(ex - er, ey, ex + er * 0.3, ey);
       dark.addColorStop(0, "rgba(0,0,0,0.0)"); dark.addColorStop(0.4, "rgba(0,0,0,0.0)"); dark.addColorStop(0.65, "rgba(0,5,15,0.85)"); dark.addColorStop(1, "rgba(0,5,15,0.98)");
@@ -224,7 +186,6 @@ function EarthBackground({ state }) {
       }
       ctx.restore();
 
-      // Atmosphere glow
       const atmoCol = state === "CRITIC" ? "rgba(255,60,60," : state === "AVERTIZARE" ? "rgba(255,200,0," : "rgba(80,160,255,";
       for (let i = 3; i >= 1; i--) {
         const atmo = ctx.createRadialGradient(ex, ey, er * (1 + 0.01 * i), ex, ey, er * (1 + 0.08 * i));
@@ -238,13 +199,11 @@ function EarthBackground({ state }) {
       shine.addColorStop(0, "rgba(255,255,255,0.12)"); shine.addColorStop(0.4, "rgba(255,255,255,0.04)"); shine.addColorStop(1, "transparent");
       ctx.fillStyle = shine; ctx.fill(); ctx.restore();
 
-      // Grid overlay (HUD effect)
       ctx.strokeStyle = `rgba(0,229,255,0.03)`; ctx.lineWidth = 0.5;
       const gs = 60;
       for (let x = (frame * 0.2) % gs; x < W; x += gs) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
       for (let y = (frame * 0.15) % gs; y < H; y += gs) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
 
-      // Scanline
       const scanY = ((frame * 2) % (H + 40)) - 20;
       const scan = ctx.createLinearGradient(0, scanY - 2, 0, scanY + 2);
       scan.addColorStop(0, "transparent"); scan.addColorStop(0.5, "rgba(0,229,255,0.04)"); scan.addColorStop(1, "transparent");
@@ -259,7 +218,6 @@ function EarthBackground({ state }) {
   return <canvas ref={canvasRef} style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none" }} />;
 }
 
-// ─── SATELIT PLUTITOR ───────────────────────────────────────────────────────
 function FloatingSatellite({ state }) {
   const colors = getStateColors(state);
   return (
@@ -313,7 +271,6 @@ function FloatingSatellite({ state }) {
   );
 }
 
-// ─── CARD TEMPERATURĂ ───────────────────────────────────────────────────────
 function TemperatureCard({ temp, humidity, history, state }) {
   const colors = getStateColors(state);
   const high = temp > 34, warn = temp > 30;
@@ -364,7 +321,6 @@ function TemperatureCard({ temp, humidity, history, state }) {
   );
 }
 
-// ─── RADAR DISTANȚĂ ──────────────────────────────────────────────────────────
 function DistanceRadar({ distance, state }) {
   const colors = getStateColors(state);
   const danger = distance < 25;
@@ -419,7 +375,6 @@ function DistanceRadar({ distance, state }) {
   );
 }
 
-// ─── STABILITATE ORBITALĂ ────────────────────────────────────────────────────
 function OrbitalStabilityPanel({ gyro, orientation, state }) {
   const colors = getStateColors(state);
   const unstable = orientation === "INSTABIL";
@@ -475,7 +430,6 @@ function OrbitalStabilityPanel({ gyro, orientation, state }) {
   );
 }
 
-// ─── PANOU ANALIZĂ IA ────────────────────────────────────────────────────────
 function AIAnalysisPanel({ decision, state, data }) {
   const colors = getStateColors(state);
   const [log, setLog] = useState([]);
@@ -509,7 +463,7 @@ function AIAnalysisPanel({ decision, state, data }) {
           ["STABIL.", data.orientation, data.orientation === "INSTABIL"],
         ].map(([label, val, warn]) => (
           <div key={label} style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${warn ? "rgba(255,170,0,0.3)" : "rgba(0,229,255,0.1)"}`, borderRadius: 6, padding: "6px 8px", textAlign: "center" }}>
-            <div className="font-mono" style={{ fontSize: 8, color: "rgba(0,229,255,0.4)", letterSpacing: 1 }}>{label}</div>
+            <div className="font-mono" style={{ fontSize: 10, color: "rgba(0,229,255,0.4)", letterSpacing: 1 }}>{label}</div>
             <div className="font-mono" style={{ fontSize: 11, color: warn ? "#ffaa00" : "#00e5ff", fontWeight: 700 }}>{val}</div>
           </div>
         ))}
@@ -531,29 +485,184 @@ function AIAnalysisPanel({ decision, state, data }) {
   );
 }
 
-// ─── PANOU ALERTE ────────────────────────────────────────────────────────────
 function AlertPanel({ data, state }) {
   const colors = getStateColors(state);
+
   const alerts = [];
-  if (data.temperature > 34) alerts.push({ sev: "CRITIC", msg: "SUPRAÎNCĂLZIRE — Protocol de răcire activat", icon: "⚠" });
-  else if (data.temperature > 30) alerts.push({ sev: "AVERTIZARE", msg: "Temperatură ridicată — Monitorizare necesară", icon: "!" });
-  if (data.distance < 25) alerts.push({ sev: "CRITIC", msg: "COLIZIUNE IMINENTĂ — Manevrată de evitare activă", icon: "⚠" });
-  else if (data.distance < 50) alerts.push({ sev: "AVERTIZARE", msg: "Alertă proximitate — Obiect detectat", icon: "!" });
-  if (data.orientation === "INSTABIL") alerts.push({ sev: "CRITIC", msg: "INSTABILITATE ORBITALĂ — Stabilizare activată", icon: "⚠" });
-  if (alerts.length === 0) alerts.push({ sev: "OK", msg: "Toate sistemele funcționează nominal", icon: "✓" });
+
+  if (data.temperature > 34)
+    alerts.push({
+      sev: "CRITIC",
+      msg: "SUPRAÎNCĂLZIRE — Protocol de răcire activat",
+      icon: "⚠"
+    });
+
+  else if (data.temperature > 30)
+    alerts.push({
+      sev: "AVERTIZARE",
+      msg: "Temperatură ridicată — Monitorizare necesară",
+      icon: "!"
+    });
+
+  if (data.distance < 25)
+    alerts.push({
+      sev: "CRITIC",
+      msg: "COLIZIUNE IMINENTĂ — Manevrată de evitare activă",
+      icon: "⚠"
+    });
+
+  else if (data.distance < 50)
+    alerts.push({
+      sev: "AVERTIZARE",
+      msg: "Alertă proximitate — Obiect detectat",
+      icon: "!"
+    });
+
+  if (data.orientation === "INSTABIL")
+    alerts.push({
+      sev: "CRITIC",
+      msg: "INSTABILITATE ORBITALĂ — Stabilizare activată",
+      icon: "⚠"
+    });
+
+  if (alerts.length === 0)
+    alerts.push({
+      sev: "OK",
+      msg: "Toate sistemele funcționează nominal",
+      icon: "✓"
+    });
 
   return (
-    <div className="glass holo" style={{ padding: "16px", border: `1px solid ${colors.border}`, boxShadow: `0 0 20px ${colors.glow}` }}>
-      <div className="font-mono" style={{ fontSize: 10, color: colors.primary, letterSpacing: 3, marginBottom: 10 }}>SISTEM DE ALERTE</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+    <div
+      className="glass holo"
+      style={{
+        padding: "16px",
+        border: `1px solid ${colors.border}`,
+        boxShadow: `0 0 20px ${colors.glow}`
+      }}
+    >
+      <div
+        className="font-mono"
+        style={{
+          fontSize: 12,
+          color: colors.primary,
+          letterSpacing: 4,
+          marginBottom: 14,
+          textAlign: "center",
+          fontWeight: 700
+        }}
+      >
+        SISTEM DE ALERTE
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 10
+        }}
+      >
         {alerts.map((a, i) => {
-          const ac = a.sev === "CRITIC" ? getStateColors("CRITIC") : a.sev === "AVERTIZARE" ? getStateColors("AVERTIZARE") : { primary: "#00ff88", border: "rgba(0,255,136,0.3)", glow: "rgba(0,255,136,0.2)", dim: "rgba(0,255,136,0.05)" };
+
+          const ac =
+            a.sev === "CRITIC"
+              ? getStateColors("CRITIC")
+              : a.sev === "AVERTIZARE"
+              ? getStateColors("AVERTIZARE")
+              : {
+                  primary: "#00ff88",
+                  border: "rgba(0,255,136,0.3)",
+                  glow: "rgba(0,255,136,0.2)",
+                  dim: "rgba(0,255,136,0.05)"
+                };
+
           return (
-            <div key={i} className={a.sev === "CRITIC" ? "blink-crit" : ""} style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", background: ac.dim, border: `1px solid ${ac.border}`, borderRadius: 6, boxShadow: a.sev === "CRITIC" ? `0 0 12px ${ac.glow}` : "none" }}>
-              <span style={{ color: ac.primary, fontSize: 12, flexShrink: 0 }}>{a.icon}</span>
-              <div>
-                <div className="font-mono" style={{ fontSize: 9, color: ac.primary, letterSpacing: 1 }}>[{a.sev}]</div>
-                <div className="font-raj" style={{ fontSize: 12, color: a.sev === "OK" ? ac.primary : "rgba(220,240,255,0.9)", fontWeight: 500 }}>{a.msg}</div>
+            <div
+              key={i}
+              className={a.sev === "CRITIC" ? "blink-crit" : ""}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+
+                gap: 14,
+
+                padding: "16px",
+
+                minHeight: 90,
+
+                background: ac.dim,
+
+                border: `1px solid ${ac.border}`,
+
+                borderRadius: 8,
+
+                textAlign: "center",
+
+                boxShadow:
+                  a.sev === "CRITIC"
+                    ? `0 0 14px ${ac.glow}`
+                    : `0 0 8px ${ac.glow}`
+              }}
+            >
+              <span
+                style={{
+                  color: ac.primary,
+                  fontSize: 24,
+                  flexShrink: 0,
+
+                  textShadow: `0 0 10px ${ac.glow}`
+                }}
+              >
+                {a.icon}
+              </span>
+
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+
+                  alignItems: "center",
+
+                  justifyContent: "center",
+
+                  gap: 6
+                }}
+              >
+                <div
+                  className="font-mono"
+                  style={{
+                    fontSize: 11,
+
+                    color: ac.primary,
+
+                    letterSpacing: 2,
+
+                    fontWeight: 700
+                  }}
+                >
+                  [{a.sev}]
+                </div>
+
+                <div
+                  className="font-raj"
+                  style={{
+                    fontSize: 15,
+
+                    color:
+                      a.sev === "OK"
+                        ? ac.primary
+                        : "rgba(220,240,255,0.95)",
+
+                    fontWeight: 600,
+
+                    lineHeight: 1.4,
+
+                    maxWidth: 280
+                  }}
+                >
+                  {a.msg}
+                </div>
               </div>
             </div>
           );
@@ -563,7 +672,6 @@ function AlertPanel({ data, state }) {
   );
 }
 
-// ─── PANOU SERVO ─────────────────────────────────────────────────────────────
 function ServoPanel({ servo, state }) {
   const colors = getStateColors(state);
   return (
@@ -579,8 +687,8 @@ function ServoPanel({ servo, state }) {
             <div style={{ height: "100%", width: `${(val / max) * 100}%`, background: `linear-gradient(90deg, ${colors.secondary}, ${colors.primary})`, borderRadius: 3, transition: "width 0.5s ease", boxShadow: `0 0 8px ${colors.glow}` }} />
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3 }}>
-            <span className="font-mono" style={{ fontSize: 8, color: "rgba(0,229,255,0.3)" }}>0°</span>
-            <span className="font-mono" style={{ fontSize: 8, color: "rgba(0,229,255,0.3)" }}>{max}°</span>
+            <span className="font-mono" style={{ fontSize: 10, color: "rgba(0,229,255,0.3)" }}>0°</span>
+            <span className="font-mono" style={{ fontSize: 10, color: "rgba(0,229,255,0.3)" }}>{max}°</span>
           </div>
         </div>
       ))}
@@ -588,11 +696,10 @@ function ServoPanel({ servo, state }) {
   );
 }
 
-// ─── HEADER STATUS SISTEM ───────────────────────────────────────────────────
 function SystemStatusHeader({ state, uptime, connected, risk }) {
   const colors = getStateColors(state);
   const uptimeStr = (() => {
-    const s = uptime; const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); const sec = s % 60;
+    const s = uptime || 0; const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); const sec = s % 60;
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   })();
 
@@ -633,7 +740,6 @@ function SystemStatusHeader({ state, uptime, connected, risk }) {
   );
 }
 
-// ─── TICKER ──────────────────────────────────────────────────────────────────
 function Ticker({ data, state }) {
   const colors = getStateColors(state);
   const items = [
@@ -643,7 +749,7 @@ function Ticker({ data, state }) {
   ];
   return (
     <div style={{ background: "rgba(0,0,0,0.7)", borderTop: `1px solid ${colors.border}`, borderBottom: `1px solid ${colors.border}`, overflow: "hidden", height: 26, display: "flex", alignItems: "center" }}>
-      <div style={{ whiteSpace: "nowrap", animation: "ticker 30s linear infinite", display: "flex", gap: 40 }}>
+      <div style={{ whiteSpace: "nowrap", animation: "ticker 50s linear infinite", display: "flex", gap: 40 }}>
         {[...items, ...items].map((item, i) => (
           <span key={i} className="font-mono" style={{ fontSize: 9, color: colors.primary, letterSpacing: 2, opacity: 0.8 }}>
             ◆ {item}
@@ -654,7 +760,6 @@ function Ticker({ data, state }) {
   );
 }
 
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
 function StatusBadge({ label, color }) {
   return (
     <div style={{ display: "inline-block", padding: "2px 8px", border: `1px solid ${color}`, borderRadius: 3, background: `${color}15`, marginTop: 4 }}>
@@ -671,19 +776,17 @@ function CritAlert({ msg }) {
   );
 }
 
-// ─── MINI STAT ───────────────────────────────────────────────────────────────
 function MiniStat({ label, value, unit, state }) {
   const colors = getStateColors(state);
   return (
     <div style={{ background: "rgba(0,0,0,0.4)", border: `1px solid ${colors.border}`, borderRadius: 8, padding: "10px 12px", textAlign: "center" }}>
-      <div className="font-mono" style={{ fontSize: 8, color: "rgba(0,229,255,0.4)", letterSpacing: 2, marginBottom: 4 }}>{label}</div>
+      <div className="font-mono" style={{ fontSize: 10, color: "rgba(0,229,255,0.4)", letterSpacing: 2, marginBottom: 4 }}>{label}</div>
       <div className="font-orb" style={{ fontSize: 18, fontWeight: 700, color: colors.primary, lineHeight: 1 }}>{value}</div>
-      {unit && <div className="font-mono" style={{ fontSize: 8, color: "rgba(0,229,255,0.4)", marginTop: 2 }}>{unit}</div>}
+      {unit && <div className="font-mono" style={{ fontSize: 10, color: "rgba(0,229,255,0.4)", marginTop: 2 }}>{unit}</div>}
     </div>
   );
 }
 
-// ─── APLICAȚIA PRINCIPALĂ ────────────────────────────────────────────────────
 export default function App() {
   const { data, history, connected } = useTelemetry();
   const { state } = data;
@@ -773,7 +876,7 @@ export default function App() {
                     ["MOTOR IA", "ONLINE"],
                   ].map(([label, val]) => (
                     <div key={label} style={{ background: "rgba(0,0,0,0.3)", borderRadius: 4, padding: "6px 8px" }}>
-                      <div className="font-mono" style={{ fontSize: 8, color: "rgba(0,229,255,0.35)", letterSpacing: 1 }}>{label}</div>
+                      <div className="font-mono" style={{ fontSize: 10, color: "rgba(0,229,255,0.35)", letterSpacing: 1 }}>{label}</div>
                       <div className="font-mono" style={{ fontSize: 10, color: colors.primary }}>{val}</div>
                     </div>
                   ))}

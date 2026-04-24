@@ -1,142 +1,162 @@
-import json
-import threading
-
 from flask import Flask
-import paho.mqtt.client as mqtt
-
+from flask import jsonify
+from flask import request
+from flask_cors import CORS
 
 app = Flask(__name__)
 
-
-# =========================
-# SATELLITE STATE
-# =========================
+CORS(app)
 
 satellite_data = {
+
     "temperature": 0,
-    "humidity": 0,
+
+    "orientation": "STABLE",
+
+    "gyro": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+    },
+
     "state": "STABLE",
+
     "risk": "LOW",
-    "decision": "Systems nominal"
+
+    "decision": "Systems nominal",
+
+    "humidity": 0,
+
+    "distance": 100,
+
+    "servo": {
+        "pan": 90,
+        "tilt": 45
+    },
+
+    "uptime": 0
 }
 
 
-# =========================
-# AI ANALYSIS
-# =========================
+def analyze_data(temp, orientation):
 
-def analyze_data(temp, humidity):
-
-    if temp > 30:
+    if temp > 30 or orientation == "UNSTABLE":
 
         return {
-            "state": "WARNING",
+            "state": "CRITIC",
             "risk": "HIGH",
-            "decision": "Cooling protocol activated"
+            "decision": "Warning detected. Stabilization protocol activated."
         }
 
     return {
         "state": "STABLE",
         "risk": "LOW",
-        "decision": "Systems nominal"
+        "decision": "Toate sistemele functioneaza normal"
     }
 
 
-# =========================
-# MQTT CALLBACK
-# =========================
+@app.route("/")
+def home():
 
-def on_message(client, userdata, msg):
+    return jsonify({
+        "message": "Satellite backend running"
+    })
+
+
+@app.route("/telemetry")
+def telemetry():
+
+    return jsonify(satellite_data)
+
+
+@app.route("/update", methods=["POST"])
+def update():
 
     global satellite_data
 
-    data = json.loads(msg.payload.decode())
+    data = request.json
 
-    temp = data["temperature"]
-    hum = data["humidity"]
+    temp = data.get("temperature", 0)
 
-    result = analyze_data(temp, hum)
+    orientation = data.get(
+        "orientation",
+        "STABLE"
+    )
+
+    gx = data.get("gx", 0)
+    gy = data.get("gy", 0)
+    gz = data.get("gz", 0)
+
+    result = analyze_data(
+        temp,
+        orientation
+    )
 
     satellite_data = {
+
         "temperature": temp,
-        "humidity": hum,
+
+        "orientation": orientation,
+
+        "gyro": {
+            "x": gx,
+            "y": gy,
+            "z": gz
+        },
+
         "state": result["state"],
+
         "risk": result["risk"],
-        "decision": result["decision"]
+
+        "decision": result["decision"],
+
+        "humidity": data.get(
+            "humidity",
+            0
+        ),
+
+        "distance": data.get(
+            "distance",
+            100
+        ),
+
+        "servo": {
+            "pan": data.get(
+                "pan",
+                90
+            ),
+
+            "tilt": data.get(
+                "tilt",
+                45
+            )
+        },
+
+        "uptime": data.get(
+            "uptime",
+            0
+        )
     }
 
-    print("\n========== TELEMETRY ==========")
+    print("\n=== DATE PRIMITE ===")
+    print(satellite_data)
 
-    print(f"Temperature: {temp} C")
-    print(f"Humidity: {hum} %")
-
-    print("\n========== AI ANALYSIS ==========")
-
-    print(f"Satellite State: {result['state']}")
-    print(f"Risk Level: {result['risk']}")
-    print(f"Decision: {result['decision']}")
+    return jsonify({
+        "status": "ok"
+    })
 
 
-# =========================
-# MQTT THREAD
-# =========================
+@app.route("/command")
+def command():
 
-def start_mqtt():
+    return jsonify({
+        "command": "NONE"
+    })
 
-    client = mqtt.Client()
-
-    client.on_message = on_message
-
-    client.connect("localhost", 1883)
-
-    client.subscribe("satellite/telemetry")
-
-    client.loop_forever()
-
-
-# =========================
-# WEB UI
-# =========================
-
-@app.route("/")
-def dashboard():
-
-    color = "green"
-
-    if satellite_data["state"] == "WARNING":
-        color = "orange"
-
-    return f"""
-    <body style="background:black;color:white;font-family:Arial;padding:40px;">
-
-        <h1 style="color:{color};">
-            🛰️ SATELLITE MISSION CONTROL
-        </h1>
-
-        <h2>State: {satellite_data['state']}</h2>
-
-        <h3>Temperature: {satellite_data['temperature']} C</h3>
-
-        <h3>Humidity: {satellite_data['humidity']} %</h3>
-
-        <h3>Risk Level: {satellite_data['risk']}</h3>
-
-        <h3>AI Decision:</h3>
-
-        <p>{satellite_data['decision']}</p>
-
-    </body>
-    """
-
-
-# =========================
-# START SYSTEM
-# =========================
 
 if __name__ == "__main__":
 
-    mqtt_thread = threading.Thread(target=start_mqtt)
-
-    mqtt_thread.start()
-
-    app.run(host="0.0.0.0", port=5000)
+    app.run(
+        host="0.0.0.0",
+        port=5000
+    )
