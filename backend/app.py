@@ -3,6 +3,11 @@ from flask import jsonify
 from flask import request
 from flask_cors import CORS
 
+from commands.command_manager import (
+    set_command,
+    get_command
+)
+
 app = Flask(__name__)
 
 CORS(app)
@@ -30,8 +35,8 @@ satellite_data = {
     "distance": 100,
 
     "servo": {
-        "pan": 90,
-        "tilt": 45
+        "pan": 0,
+        "tilt": 0
     },
 
     "uptime": 0
@@ -76,16 +81,38 @@ def update():
 
     data = request.json
 
-    temp = data.get("temperature", 0)
-
-    orientation = data.get(
-        "orientation",
-        "STABLE"
+    temp = data.get(
+        "temperature",
+        0
     )
 
-    gx = data.get("gx", 0)
-    gy = data.get("gy", 0)
-    gz = data.get("gz", 0)
+    distance = data.get(
+        "distance",
+        100
+    )
+
+    gx = data.get(
+        "gx",
+        0
+    )
+
+    gy = data.get(
+        "gy",
+        0
+    )
+
+    gz = data.get(
+        "gz",
+        0
+    )
+
+    orientation = "STABLE"
+
+    if (
+        abs(gx) > 10000
+        or abs(gy) > 10000
+    ):
+        orientation = "UNSTABLE"
 
     result = analyze_data(
         temp,
@@ -115,21 +142,16 @@ def update():
             0
         ),
 
-        "distance": data.get(
-            "distance",
-            100
-        ),
+        "distance": distance,
 
         "servo": {
+
             "pan": data.get(
-                "pan",
-                90
+                "servo_angle",
+                0
             ),
 
-            "tilt": data.get(
-                "tilt",
-                45
-            )
+            "tilt": 0
         },
 
         "uptime": data.get(
@@ -139,24 +161,55 @@ def update():
     }
 
     print("\n=== DATE PRIMITE ===")
+
     print(satellite_data)
 
     return jsonify({
+
         "status": "ok"
+
     })
 
 
-@app.route("/command")
+@app.route("/command", methods=["GET", "POST"])
 def command():
 
+    if request.method == "POST":
+
+        data = request.json
+
+        cmd = data.get(
+            "command",
+            "NONE"
+        )
+
+        set_command(cmd)
+
+        print(
+            "\n=== COMANDA PRIMITA ==="
+        )
+
+        print(cmd)
+
+        return jsonify({
+
+            "status": "ok"
+
+        })
+
     return jsonify({
-        "command": "NONE"
+
+        "command": get_command()
+
     })
 
 
 if __name__ == "__main__":
 
     app.run(
+
         host="0.0.0.0",
+
         port=5000
+
     )

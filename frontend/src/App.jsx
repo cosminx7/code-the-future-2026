@@ -1,913 +1,735 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 
+/* ══════════════════════════════════════════
+   TELEMETRY HOOK — logică backend păstrată
+══════════════════════════════════════════ */
 function useTelemetry() {
   const [data, setData] = useState({
-    temperature: 0,
-    orientation: "STABLE",
-    gx: 0,
-    gy: 0,
-    gz: 0,
-    state: "STABLE",
+    temperature: 24.5,
+    humidity: 58,
+    distance: 87,
+    orientation: "STABIL",
+    gyro: { x: 0.3, y: -0.1, z: 0.0 },
+    servo: { pan: 112, tilt: 38 },
+    state: "STABIL",
     risk: "LOW",
-    decision: "",
+    decision: "Toate sistemele funcționează nominal. Menținere traiectorie.",
+    uptime: 3821,
   });
-
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-
     const fetchTelemetry = async () => {
-
       try {
-
-        const res = await fetch(
-          "http://172.20.10.13:5000/telemetry"
-        );
-
+        const res = await fetch("http://172.20.10.13:5000/telemetry");
         const json = await res.json();
-
-        console.log("DATE REALE:", json);
-
         setData(json);
-
         setConnected(true);
-
-      } catch (err) {
-
-        console.log("EROARE:", err);
-
+      } catch {
         setConnected(false);
       }
     };
-
     fetchTelemetry();
-
-    const interval = setInterval(
-      fetchTelemetry,
-      1000
-    );
-
-    return () => clearInterval(interval);
-
+    const id = setInterval(fetchTelemetry, 200);
+    return () => clearInterval(id);
   }, []);
 
-  return {
-    data,
-    connected,
-    history: {
-      temp: [],
-      dist: []
-    }
+  return { data, connected };
+}
+
+/* ══════ HELPERS ══════ */
+function uptime(s = 0) {
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sc = s % 60;
+  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(sc).padStart(2,"0")}`;
+}
+
+function stateColor(s) {
+  if (s === "CRITIC")     return "#dc2626";
+  if (s === "AVERTIZARE") return "#d97706";
+  return "#0369a1";
+}
+
+function sensorState(val, warn, crit) {
+  if (val >= crit) return "CRITIC";
+  if (val >= warn) return "AVERTIZARE";
+  return "STABIL";
+}
+
+/* ══════════════════════════════════════════
+   SVG GAUGE — arc semicircular
+══════════════════════════════════════════ */
+function Gauge({ value, min, max, unit, label, color, size = 120 }) {
+  const pct = Math.max(0, Math.min(1, (value - min) / (max - min)));
+  const r = 44, cx = 60, cy = 62;
+  const startAngle = -210, sweep = 240;
+  const toRad = d => d * Math.PI / 180;
+  const arc = (angle) => {
+    const rad = toRad(angle);
+    return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
   };
-}
+  const s = arc(startAngle);
+  const e = arc(startAngle + sweep);
+  const endAngle = startAngle + sweep * pct;
+  const ep = arc(endAngle);
+  const lg = sweep * pct > 180 ? 1 : 0;
+  const lg2 = sweep > 180 ? 1 : 0;
 
-function getStateColors(state) {
-  switch (state) {
-    case "CRITIC": return { primary: "#ff2244", secondary: "#ff6680", glow: "rgba(255,34,68,0.4)", dim: "rgba(255,34,68,0.08)", border: "rgba(255,34,68,0.5)" };
-    case "AVERTIZARE":  return { primary: "#ffaa00", secondary: "#ffd066", glow: "rgba(255,170,0,0.4)",  dim: "rgba(255,170,0,0.08)",  border: "rgba(255,170,0,0.5)"  };
-    default:         return { primary: "#00e5ff", secondary: "#66f0ff", glow: "rgba(0,229,255,0.35)", dim: "rgba(0,229,255,0.07)", border: "rgba(0,229,255,0.4)" };
-  }
-}
-
-
-const css = `
-  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Share+Tech+Mono&family=Rajdhani:wght@300;400;500;600;700&display=swap');
-  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  body{background:#000;overflow-x:hidden}
-  ::-webkit-scrollbar{width:4px}
-  ::-webkit-scrollbar-track{background:rgba(0,229,255,0.05)}
-  ::-webkit-scrollbar-thumb{background:rgba(0,229,255,0.3);border-radius:2px}
-  .font-orb{font-family:'Orbitron',monospace}
-  .font-mono{font-family:'Share Tech Mono',monospace}
-  .font-raj{font-family:'Rajdhani',sans-serif}
-  @keyframes float{0%,100%{transform:translateY(0) rotate(-1deg)}50%{transform:translateY(-14px) rotate(1deg)}}
-  @keyframes spin-slow{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-  @keyframes spin-rev{from{transform:rotate(360deg)}to{transform:rotate(0deg)}}
-  @keyframes pulse-ring{0%{transform:scale(1);opacity:0.7}100%{transform:scale(2.2);opacity:0}}
-  @keyframes radar-sweep{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-  @keyframes scanline{0%{transform:translateY(-100%)}100%{transform:translateY(100vh)}}
-  @keyframes blink-crit{0%,100%{opacity:1}50%{opacity:0.15}}
-  @keyframes ticker{0%{transform:translateX(50%)}100%{transform:translateX(-100%)}}
-  @keyframes grid-move{0%{background-position:0 0}100%{background-position:60px 60px}}
-  @keyframes earth-rotate{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-  @keyframes atmo-pulse{0%,100%{opacity:0.6;transform:scale(1)}50%{opacity:0.9;transform:scale(1.01)}}
-  @keyframes star-twinkle{0%,100%{opacity:0.3}50%{opacity:1}}
-  @keyframes data-flow{0%{stroke-dashoffset:200}100%{stroke-dashoffset:0}}
-  @keyframes slide-in{from{transform:translateY(-20px);opacity:0}to{transform:translateY(0);opacity:1}}
-  @keyframes holo-flicker{0%,100%{opacity:1}92%{opacity:1}93%{opacity:0.4}94%{opacity:1}97%{opacity:0.7}98%{opacity:1}}
-  .float{animation:float 6s ease-in-out infinite}
-  .blink-crit{animation:blink-crit 0.8s ease-in-out infinite}
-  .holo{animation:holo-flicker 8s infinite}
-  .slide-in{animation:slide-in 0.4s ease-out forwards}
-  .glass{background:rgba(0,229,255,0.04);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(0,229,255,0.15);border-radius:12px}
-  .glass-warn{background:rgba(255,170,0,0.04);backdrop-filter:blur(16px);border:1px solid rgba(255,170,0,0.2);border-radius:12px}
-  .glass-crit{background:rgba(255,34,68,0.05);backdrop-filter:blur(16px);border:1px solid rgba(255,34,68,0.25);border-radius:12px}
-`;
-
-function EarthBackground({ state }) {
-  const canvasRef = useRef(null);
-  const starsRef = useRef(Array.from({ length: 200 }, () => ({
-    x: Math.random() * 1600, y: Math.random() * 900,
-    r: Math.random() * 1.5 + 0.3,
-    phase: Math.random() * Math.PI * 2,
-    speed: 0.3 + Math.random() * 0.7,
-  })));
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    let frame = 0, raf;
-    function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
-    resize();
-    window.addEventListener("resize", resize);
-
-    function draw() {
-      frame++;
-      const { width: W, height: H } = canvas;
-      ctx.clearRect(0, 0, W, H);
-
-      const bg = ctx.createRadialGradient(W * 0.3, H * 0.2, 0, W * 0.3, H * 0.2, W * 1.2);
-      bg.addColorStop(0, "#020a14"); bg.addColorStop(0.5, "#01050d"); bg.addColorStop(1, "#000000");
-      ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-
-      starsRef.current.forEach(s => {
-        const tw = 0.3 + 0.7 * (0.5 + 0.5 * Math.sin(frame * 0.02 * s.speed + s.phase));
-        ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(180,220,255,${tw})`; ctx.fill();
-      });
-
-      const neb = ctx.createRadialGradient(W * 0.7, H * 0.3, 0, W * 0.7, H * 0.3, W * 0.4);
-      neb.addColorStop(0, "rgba(0,100,180,0.06)"); neb.addColorStop(0.5, "rgba(0,50,120,0.03)"); neb.addColorStop(1, "transparent");
-      ctx.fillStyle = neb; ctx.fillRect(0, 0, W, H);
-
-      const ex = W * 0.12, ey = H * 0.85, er = Math.min(W, H) * 0.45;
-      const earthRot = (frame * 0.002) % (Math.PI * 2);
-
-      ctx.save(); ctx.beginPath(); ctx.arc(ex, ey, er, 0, Math.PI * 2);
-      const oceanGrad = ctx.createRadialGradient(ex - er * 0.3, ey - er * 0.3, 0, ex, ey, er);
-      oceanGrad.addColorStop(0, "#1a6fa8"); oceanGrad.addColorStop(0.5, "#0d4d7a"); oceanGrad.addColorStop(1, "#071e30");
-      ctx.fillStyle = oceanGrad; ctx.fill(); ctx.restore();
-
-      ctx.save(); ctx.beginPath(); ctx.arc(ex, ey, er, 0, Math.PI * 2); ctx.clip();
-      const landPieces = [
-        { ox: 0.15, oy: -0.15, rx: 0.22, ry: 0.28 },
-        { ox: -0.1, oy: 0.1, rx: 0.18, ry: 0.2 },
-        { ox: 0.3, oy: 0.2, rx: 0.12, ry: 0.15 },
-        { ox: -0.3, oy: -0.05, rx: 0.14, ry: 0.1 },
-      ];
-      landPieces.forEach(({ ox, oy, rx, ry }) => {
-        const lx = ex + (ox * Math.cos(earthRot) - oy * Math.sin(earthRot)) * er;
-        const ly = ey + (ox * Math.sin(earthRot) + oy * Math.cos(earthRot)) * er;
-        const g = ctx.createRadialGradient(lx, ly, 0, lx, ly, rx * er);
-        g.addColorStop(0, "rgba(34,120,50,0.9)"); g.addColorStop(0.6, "rgba(20,80,35,0.7)"); g.addColorStop(1, "transparent");
-        ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(lx, ly, rx * er, ry * er, earthRot * 0.5, 0, Math.PI * 2); ctx.fill();
-      });
-      ctx.restore();
-
-      ctx.save(); ctx.beginPath(); ctx.arc(ex, ey, er, 0, Math.PI * 2); ctx.clip();
-      const icePole = ctx.createRadialGradient(ex, ey - er * 0.7, 0, ex, ey - er * 0.7, er * 0.45);
-      icePole.addColorStop(0, "rgba(200,230,255,0.9)"); icePole.addColorStop(1, "transparent");
-      ctx.fillStyle = icePole; ctx.fillRect(ex - er, ey - er, er * 2, er * 0.7);
-      ctx.restore();
-
-      ctx.save(); ctx.beginPath(); ctx.arc(ex, ey, er, 0, Math.PI * 2); ctx.clip();
-      const dark = ctx.createLinearGradient(ex - er, ey, ex + er * 0.3, ey);
-      dark.addColorStop(0, "rgba(0,0,0,0.0)"); dark.addColorStop(0.4, "rgba(0,0,0,0.0)"); dark.addColorStop(0.65, "rgba(0,5,15,0.85)"); dark.addColorStop(1, "rgba(0,5,15,0.98)");
-      ctx.fillStyle = dark; ctx.fillRect(ex - er, ey - er, er * 2, er * 2);
-      for (let i = 0; i < 60; i++) {
-        const angle = (i / 60) * Math.PI * 2 + earthRot;
-        const dist = er * (0.3 + Math.random() * 0.55);
-        const cx2 = ex + Math.cos(angle) * dist, cy2 = ey + Math.sin(angle) * dist * 0.6;
-        if (cx2 < ex - er * 0.1) {
-          ctx.fillStyle = `rgba(255,220,100,${0.3 + Math.random() * 0.4})`;
-          ctx.fillRect(cx2, cy2, 1.5, 1.5);
-        }
-      }
-      ctx.restore();
-
-      const atmoCol = state === "CRITIC" ? "rgba(255,60,60," : state === "AVERTIZARE" ? "rgba(255,200,0," : "rgba(80,160,255,";
-      for (let i = 3; i >= 1; i--) {
-        const atmo = ctx.createRadialGradient(ex, ey, er * (1 + 0.01 * i), ex, ey, er * (1 + 0.08 * i));
-        atmo.addColorStop(0, atmoCol + (0.18 / i) + ")");
-        atmo.addColorStop(1, "transparent");
-        ctx.fillStyle = atmo; ctx.beginPath(); ctx.arc(ex, ey, er * (1 + 0.08 * i), 0, Math.PI * 2); ctx.fill();
-      }
-      ctx.save();
-      ctx.beginPath(); ctx.arc(ex, ey, er, 0, Math.PI * 2);
-      const shine = ctx.createRadialGradient(ex - er * 0.35, ey - er * 0.35, 0, ex, ey, er);
-      shine.addColorStop(0, "rgba(255,255,255,0.12)"); shine.addColorStop(0.4, "rgba(255,255,255,0.04)"); shine.addColorStop(1, "transparent");
-      ctx.fillStyle = shine; ctx.fill(); ctx.restore();
-
-      ctx.strokeStyle = `rgba(0,229,255,0.03)`; ctx.lineWidth = 0.5;
-      const gs = 60;
-      for (let x = (frame * 0.2) % gs; x < W; x += gs) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-      for (let y = (frame * 0.15) % gs; y < H; y += gs) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-
-      const scanY = ((frame * 2) % (H + 40)) - 20;
-      const scan = ctx.createLinearGradient(0, scanY - 2, 0, scanY + 2);
-      scan.addColorStop(0, "transparent"); scan.addColorStop(0.5, "rgba(0,229,255,0.04)"); scan.addColorStop(1, "transparent");
-      ctx.fillStyle = scan; ctx.fillRect(0, scanY - 2, W, 4);
-
-      raf = requestAnimationFrame(draw);
-    }
-    draw();
-    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); };
-  }, [state]);
-
-  return <canvas ref={canvasRef} style={{ position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none" }} />;
-}
-
-function FloatingSatellite({ state }) {
-  const colors = getStateColors(state);
   return (
-    <div className="float" style={{ display: "flex", justifyContent: "center", alignItems: "center", position: "relative" }}>
-      <div style={{ position: "absolute", width: 160, height: 160, borderRadius: "50%", background: `radial-gradient(circle, ${colors.glow} 0%, transparent 70%)`, animation: "atmo-pulse 3s ease-in-out infinite" }} />
-      {[0, 1, 2].map(i => (
-        <div key={i} style={{ position: "absolute", width: 160 + i * 30, height: 160 + i * 30, borderRadius: "50%", border: `1px solid ${colors.primary}`, opacity: 0.1 - i * 0.025, animation: `spin-slow ${8 + i * 4}s linear infinite` }} />
+    <svg width={size} height={size * 0.9} viewBox="0 0 120 108" style={{ overflow: "visible" }}>
+      <path
+        d={`M${s.x},${s.y} A${r},${r} 0 ${lg2},1 ${e.x},${e.y}`}
+        fill="none" stroke="#e2e8f0" strokeWidth="7" strokeLinecap="round"
+      />
+      {pct > 0 && (
+        <path
+          d={`M${s.x},${s.y} A${r},${r} 0 ${lg},1 ${ep.x},${ep.y}`}
+          fill="none" stroke={color} strokeWidth="7" strokeLinecap="round"
+          style={{ filter: `drop-shadow(0 0 4px ${color}55)` }}
+        />
+      )}
+      <text x="60" y="66" textAnchor="middle" fill="#0f172a" fontSize="20" fontFamily="Epilogue, sans-serif" fontWeight="700">{value}</text>
+      <text x="60" y="78" textAnchor="middle" fill={color} fontSize="9" fontFamily="DM Mono, monospace" letterSpacing="1">{unit}</text>
+      <text x="60" y="92" textAnchor="middle" fill="#94a3b8" fontSize="8" fontFamily="DM Mono, monospace" letterSpacing="2">{label}</text>
+    </svg>
+  );
+}
+
+/* ══════ HORIZONTAL BAR ══════ */
+function Bar({ value, max, color, label, unit, warn, crit }) {
+  const pct = Math.max(0, Math.min(1, value / max));
+  const col = label === "DISTANȚĂ" ? value <= 25 ? "#dc2626" : value <= 50 ? "#d97706" : "#0369a1" : value >= crit ? "#dc2626" : value >= warn ? "#d97706" : color;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <span style={{ fontSize: 10, fontFamily: "DM Mono, monospace", letterSpacing: "0.15em", color: "#64748b" }}>{label}</span>
+        <span style={{ fontSize: 14, fontFamily: "Epilogue, sans-serif", fontWeight: 700, color: "#0f172a" }}>{value}<span style={{ fontSize: 10, color: col, marginLeft: 2 }}>{unit}</span></span>
+      </div>
+      <div style={{ height: 6, background: "#e2e8f0", borderRadius: 99, overflow: "hidden" }}>
+        <div style={{
+          height: "100%", width: `${pct * 100}%`, background: col, borderRadius: 99,
+          transition: "width 0.7s cubic-bezier(.4,0,.2,1)",
+          boxShadow: `0 0 8px ${col}55`,
+        }} />
+      </div>
+    </div>
+  );
+}
+
+/* ══════ GYRO LEVEL ══════ */
+function GyroLevel({ gx = 0, gy = 0, color }) {
+  const cx = 50, cy = 50, R = 36;
+  const bx = Math.max(cx - R + 8, Math.min(cx + R - 8, cx + gy * 5));
+  const by = Math.max(cy - R + 8, Math.min(cy + R - 8, cy + gx * 5));
+  return (
+    <svg width="100" height="100" viewBox="0 0 100 100">
+      {[R, R * 0.6, R * 0.25].map((r, i) => (
+        <circle key={i} cx={cx} cy={cy} r={r} fill="none" stroke={i === 0 ? "#e2e8f0" : "#f1f5f9"} strokeWidth={i === 0 ? 1.5 : 1} />
       ))}
-      <svg width="140" height="100" viewBox="0 0 140 100" style={{ filter: `drop-shadow(0 0 12px ${colors.primary}) drop-shadow(0 0 4px ${colors.secondary})`, position: "relative", zIndex: 1 }}>
-        {/* Body */}
-        <rect x="52" y="36" width="36" height="28" rx="4" fill="#1a2a3a" stroke={colors.primary} strokeWidth="1.5" />
-        <rect x="55" y="39" width="30" height="22" rx="2" fill="none" stroke={colors.secondary} strokeWidth="0.5" strokeDasharray="4 2" />
-        <circle cx="70" cy="50" r="6" fill="none" stroke={colors.primary} strokeWidth="1.2" />
-        <circle cx="70" cy="50" r="3" fill={colors.secondary} opacity="0.7" />
-        {/* Solar panels */}
-        {[[-44, 0], [44, 0]].map(([dx], idx) => (
-          <g key={idx}>
-            <rect x={52 + dx} y="42" width="38" height="16" rx="2" fill="#0a1520" stroke={colors.primary} strokeWidth="1" />
-            {[0, 1, 2, 3, 4].map(j => <line key={j} x1={54 + dx + j * 7} y1="42" x2={54 + dx + j * 7} y2="58" stroke={colors.secondary} strokeWidth="0.5" opacity="0.6" />)}
-            {[0, 1].map(j => <line key={j} x1={52 + dx} y1={46 + j * 7} x2={90 + dx} y2={46 + j * 7} stroke={colors.secondary} strokeWidth="0.5" opacity="0.6" />)}
-            <rect x={51 + dx} y="48" width="2.5" height="4" fill={colors.primary} />
-            <rect x={88 + dx} y="48" width="2.5" height="4" fill={colors.primary} />
-          </g>
-        ))}
-        {/* Antenna */}
-        <line x1="70" y1="36" x2="70" y2="20" stroke={colors.primary} strokeWidth="1.2" />
-        <circle cx="70" cy="18" r="3" fill="none" stroke={colors.primary} strokeWidth="1" />
-        <line x1="66" y1="24" x2="62" y2="16" stroke={colors.secondary} strokeWidth="0.8" />
-        <line x1="74" y1="24" x2="78" y2="16" stroke={colors.secondary} strokeWidth="0.8" />
-        {/* Thruster */}
-        <polygon points="58,64 62,72 78,72 82,64" fill="#0d1e2e" stroke={colors.primary} strokeWidth="1" />
-        <line x1="65" y1="64" x2="65" y2="72" stroke={colors.secondary} strokeWidth="0.6" opacity="0.5" />
-        <line x1="70" y1="64" x2="70" y2="72" stroke={colors.secondary} strokeWidth="0.6" opacity="0.5" />
-        <line x1="75" y1="64" x2="75" y2="72" stroke={colors.secondary} strokeWidth="0.6" opacity="0.5" />
-        {/* Engine glow */}
-        {state !== "STABIL" && (
-          <ellipse cx="70" cy="74" rx="8" ry="4" fill={colors.primary} opacity="0.4">
-            <animate attributeName="opacity" values="0.2;0.6;0.2" dur="0.8s" repeatCount="indefinite" />
-          </ellipse>
-        )}
-        {/* Status light */}
-        <circle cx="88" cy="40" r="2.5" fill={colors.primary}>
-          <animate attributeName="opacity" values="1;0.2;1" dur={state === "CRITIC" ? "0.5s" : "2s"} repeatCount="indefinite" />
-        </circle>
-        {/* Comm beam */}
-        <line x1="70" y1="64" x2="70" y2="90" stroke={colors.primary} strokeWidth="0.6" strokeDasharray="3 3" opacity="0.4">
-          <animate attributeName="stroke-dashoffset" values="0;-12" dur="1s" repeatCount="indefinite" />
-        </line>
+      <line x1={cx - R} y1={cy} x2={cx + R} y2={cy} stroke="#e2e8f0" strokeWidth="0.8" />
+      <line x1={cx} y1={cy - R} x2={cx} y2={cy + R} stroke="#e2e8f0" strokeWidth="0.8" />
+      <circle cx={bx} cy={by} r="8" fill={`${color}22`} stroke={color} strokeWidth="2"
+        style={{ transition: "cx 0.5s ease, cy 0.5s ease", filter: `drop-shadow(0 0 3px ${color}66)` }} />
+      <circle cx={cx} cy={cy} r="2" fill="#cbd5e1" />
+    </svg>
+  );
+}
+
+/* ══════ SERVO DIAL ══════ */
+function ServoDial({ value, max, label, color }) {
+  const pct = value / max;
+  const r = 28, c = 36;
+  const startA = -220, sweepA = 260;
+  const toR = d => d * Math.PI / 180;
+  const pt = a => ({ x: c + r * Math.cos(toR(a)), y: c + r * Math.sin(toR(a)) });
+  const s = pt(startA), e = pt(startA + sweepA), ep = pt(startA + sweepA * pct);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+      <svg width="72" height="72" viewBox="0 0 72 72">
+        <path d={`M${s.x},${s.y} A${r},${r} 0 1,1 ${e.x},${e.y}`} fill="none" stroke="#e2e8f0" strokeWidth="5" strokeLinecap="round" />
+        {pct > 0 && <path d={`M${s.x},${s.y} A${r},${r} 0 ${pct > 0.72 ? 1 : 0},1 ${ep.x},${ep.y}`} fill="none" stroke={color} strokeWidth="5" strokeLinecap="round" style={{ filter: `drop-shadow(0 0 3px ${color}55)` }} />}
+        <text x={c} y={c + 5} textAnchor="middle" fill="#0f172a" fontSize="13" fontFamily="Epilogue, sans-serif" fontWeight="700">{value}°</text>
       </svg>
+      <span style={{ fontSize: 9, fontFamily: "DM Mono, monospace", letterSpacing: "0.15em", color: "#94a3b8" }}>{label}</span>
     </div>
   );
 }
 
-function TemperatureCard({ temp, humidity, history, state }) {
-  const colors = getStateColors(state);
-  const high = temp > 34, warn = temp > 30;
-  const cardColor = high ? getStateColors("CRITIC") : warn ? getStateColors("AVERTIZARE") : colors;
-  const W = 260, H = 60, max = 42, min = 15;
-  const pts = history.temp.map((v, i) => {
-    const x = (i / (history.temp.length - 1)) * W;
-    const y = H - ((v - min) / (max - min)) * H;
-    return `${x},${y}`;
-  }).join(" ");
-  const areaPath = history.temp.length > 1
-    ? `M0,${H} ${history.temp.map((v, i) => { const x = (i / (history.temp.length - 1)) * W; const y = H - ((v - min) / (max - min)) * H; return `${x},${y}`; }).join(" ")} ${W},${H} Z`
-    : "";
-
+/* ══════ ALERT PILL ══════ */
+function AlertPill({ msg, sev, color }) {
   return (
-    <div className={`glass holo`} style={{ padding: "16px", border: `1px solid ${cardColor.border}`, boxShadow: `0 0 20px ${cardColor.glow}, inset 0 0 20px ${cardColor.dim}` }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-        <div>
-          <div className="font-mono" style={{ fontSize: 10, color: cardColor.primary, letterSpacing: 3, marginBottom: 4 }}>SENZOR TERMIC / DHT22</div>
-          <div className="font-orb" style={{ fontSize: 32, fontWeight: 900, color: cardColor.primary, lineHeight: 1, textShadow: `0 0 20px ${cardColor.glow}` }}>
-            {temp}°C
-          </div>
-          <div className="font-raj" style={{ fontSize: 12, color: "rgba(180,220,255,0.5)", marginTop: 3 }}>
-            UMID <span style={{ color: cardColor.secondary }}>{humidity}%</span>
-          </div>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          <StatusBadge label={high ? "SUPRAÎNCĂLZIRE" : warn ? "RIDICATĂ" : "NOMINALĂ"} color={cardColor.primary} />
-          <div className="font-mono" style={{ fontSize: 9, color: "rgba(0,229,255,0.4)", marginTop: 6 }}>
-            MAX 42°C | MIN 15°C
-          </div>
-        </div>
-      </div>
-      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }}>
-        <defs>
-          <linearGradient id="tgrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor={cardColor.primary} stopOpacity="0.4" />
-            <stop offset="1" stopColor={cardColor.primary} stopOpacity="0.02" />
-          </linearGradient>
-        </defs>
-        {history.temp.length > 1 && <path d={areaPath} fill="url(#tgrad)" />}
-        {history.temp.length > 1 && <polyline points={pts} fill="none" stroke={cardColor.primary} strokeWidth="1.5" />}
-        <line x1="0" y1={H - ((30 - min) / (max - min)) * H} x2={W} y2={H - ((30 - min) / (max - min)) * H} stroke="rgba(255,170,0,0.3)" strokeWidth="0.5" strokeDasharray="4 3" />
-        <line x1="0" y1={H - ((34 - min) / (max - min)) * H} x2={W} y2={H - ((34 - min) / (max - min)) * H} stroke="rgba(255,34,68,0.3)" strokeWidth="0.5" strokeDasharray="4 3" />
-      </svg>
-      {high && <CritAlert msg="PRAG TERMIC DEPĂȘIT" />}
+    <div style={{
+      display: "flex", alignItems: "center", gap: 10,
+      padding: "9px 14px", borderRadius: 10,
+      background: sev === "STABIL" ? "#f0fdf4" : sev === "AVERTIZARE" ? "#fffbeb" : "#fef2f2",
+      border: `1px solid ${color}33`,
+      animation: sev === "CRITIC" ? "critBlink 2s ease-in-out infinite" : "none",
+    }}>
+      <div style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0, boxShadow: `0 0 6px ${color}` }} />
+      <span style={{ fontSize: 12, fontFamily: "Epilogue, sans-serif", color: "#1e293b" }}>{msg}</span>
     </div>
   );
 }
 
-function DistanceRadar({ distance, state }) {
-  const colors = getStateColors(state);
-  const danger = distance < 25;
-  const warning = distance < 50;
-  const cardColor = danger ? getStateColors("CRITIC") : warning ? getStateColors("AVERTIZARE") : colors;
-  const pct = Math.max(0, Math.min(1, 1 - distance / 150));
-
-  return (
-    <div className="glass holo" style={{ padding: "16px", border: `1px solid ${cardColor.border}`, boxShadow: `0 0 20px ${cardColor.glow}, inset 0 0 20px ${cardColor.dim}` }}>
-      <div className="font-mono" style={{ fontSize: 10, color: cardColor.primary, letterSpacing: 3, marginBottom: 10 }}>PROXIMITATE / HC-SR04</div>
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <div style={{ position: "relative", width: 90, height: 90, flexShrink: 0 }}>
-          <svg width="90" height="90" viewBox="0 0 90 90">
-            <defs>
-              <radialGradient id="radarsweep" cx="50%" cy="50%" r="50%">
-                <stop offset="0%" stopColor={cardColor.primary} stopOpacity="0.5" />
-                <stop offset="100%" stopColor={cardColor.primary} stopOpacity="0" />
-              </radialGradient>
-            </defs>
-            {[1, 2, 3].map(r => (
-              <circle key={r} cx="45" cy="45" r={r * 12} fill="none" stroke={cardColor.primary} strokeWidth="0.5" opacity="0.25" />
-            ))}
-            <line x1="45" y1="45" x2="45" y2="9" stroke={cardColor.primary} strokeWidth="0.5" opacity="0.2" />
-            <line x1="45" y1="45" x2="81" y2="45" stroke={cardColor.primary} strokeWidth="0.5" opacity="0.2" />
-            <line x1="45" y1="45" x2="45" y2="81" stroke={cardColor.primary} strokeWidth="0.5" opacity="0.2" />
-            <line x1="45" y1="45" x2="9" y2="45" stroke={cardColor.primary} strokeWidth="0.5" opacity="0.2" />
-            <g style={{ transformOrigin: "45px 45px", animation: "radar-sweep 3s linear infinite" }}>
-              <path d="M45,45 L80,45 A35,35 0 0,0 45,10 Z" fill={`url(#radarsweep)`} opacity="0.6" />
-              <line x1="45" y1="45" x2="80" y2="45" stroke={cardColor.primary} strokeWidth="1.5" opacity="0.9" />
-            </g>
-            {pct > 0.3 && (
-              <circle cx={45 + Math.cos(2) * 35 * (1 - pct)} cy={45 + Math.sin(2) * 35 * (1 - pct)} r="3" fill={cardColor.primary}>
-                <animate attributeName="opacity" values="1;0.3;1" dur={danger ? "0.4s" : "1.2s"} repeatCount="indefinite" />
-              </circle>
-            )}
-            <circle cx="45" cy="45" r="3" fill={cardColor.primary} />
-          </svg>
-        </div>
-        <div style={{ flex: 1 }}>
-          <div className="font-orb" style={{ fontSize: 28, fontWeight: 900, color: cardColor.primary, textShadow: `0 0 15px ${cardColor.glow}`, lineHeight: 1 }}>{distance}<span style={{ fontSize: 12, marginLeft: 4 }}>cm</span></div>
-          <StatusBadge label={danger ? "RISC COLIZIUNE" : warning ? "ALERTĂ PROXIMITATE" : "LIBER"} color={cardColor.primary} />
-          <div style={{ marginTop: 8 }}>
-            <div className="font-mono" style={{ fontSize: 9, color: "rgba(0,229,255,0.4)", marginBottom: 3 }}>INDEX PROXIMITATE</div>
-            <div style={{ height: 4, background: "rgba(0,229,255,0.08)", borderRadius: 2, overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${pct * 100}%`, background: `linear-gradient(90deg, ${cardColor.secondary}, ${cardColor.primary})`, borderRadius: 2, transition: "width 0.5s ease", boxShadow: `0 0 8px ${cardColor.primary}` }} />
-            </div>
-          </div>
-        </div>
-      </div>
-      {danger && <CritAlert msg="COLIZIUNE IMINENTĂ — PROTOCOL EVITARE ACTIV" />}
-    </div>
-  );
-}
-
-function OrbitalStabilityPanel({ gyro, orientation, state }) {
-  const colors = getStateColors(state);
-  const unstable = orientation === "INSTABIL";
-  const cardColor = unstable ? getStateColors("CRITIC") : colors;
-  const cx = 50, cy = 50, r = 35;
-
-  const toX = (angle, radius = r) => cx + Math.cos(angle * Math.PI / 180) * radius;
-  const toY = (angle, radius = r) => cy + Math.sin(angle * Math.PI / 180) * radius;
-
-  return (
-    <div className="glass holo" style={{ padding: "16px", border: `1px solid ${cardColor.border}`, boxShadow: `0 0 20px ${cardColor.glow}, inset 0 0 20px ${cardColor.dim}` }}>
-      <div className="font-mono" style={{ fontSize: 10, color: cardColor.primary, letterSpacing: 3, marginBottom: 10 }}>ORIENTARE / MPU6050</div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ position: "relative", width: 100, height: 100, flexShrink: 0 }}>
-          <svg width="100" height="100" viewBox="0 0 100 100">
-            {/* Outer ring */}
-            <circle cx={cx} cy={cy} r={r} fill="none" stroke={cardColor.primary} strokeWidth="1" opacity="0.3" style={{ transformOrigin: `${cx}px ${cy}px`, animation: "spin-slow 12s linear infinite" }} />
-            {/* Middle ring */}
-            <circle cx={cx} cy={cy} r={r * 0.65} fill="none" stroke={cardColor.secondary} strokeWidth="0.8" opacity="0.25" style={{ transformOrigin: `${cx}px ${cy}px`, animation: "spin-rev 8s linear infinite" }} />
-            {/* Horizon line */}
-            <line x1={cx - r * 0.9} y1={cy + gyro.x * 5} x2={cx + r * 0.9} y2={cy - gyro.x * 5} stroke={cardColor.primary} strokeWidth="1" opacity="0.6" />
-            {/* Center cross */}
-            <line x1={cx - 8} y1={cy} x2={cx + 8} y2={cy} stroke={cardColor.primary} strokeWidth="0.8" />
-            <line x1={cx} y1={cy - 8} x2={cx} y2={cy + 8} stroke={cardColor.primary} strokeWidth="0.8" />
-            {/* Gyro dot */}
-            <circle cx={cx + gyro.y * 6} cy={cy + gyro.x * 6} r="4" fill={cardColor.primary} opacity="0.9">
-              {unstable && <animate attributeName="r" values="4;6;4" dur="0.6s" repeatCount="indefinite" />}
-            </circle>
-            {/* Tick marks */}
-            {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map(a => (
-              <line key={a} x1={toX(a, r - 3)} y1={toY(a, r - 3)} x2={toX(a, r + 3)} y2={toY(a, r + 3)} stroke={cardColor.primary} strokeWidth={a % 90 === 0 ? 1.5 : 0.5} opacity="0.5" />
-            ))}
-          </svg>
-        </div>
-        <div style={{ flex: 1 }}>
-          <StatusBadge label={orientation} color={cardColor.primary} />
-          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 5 }}>
-            {[[ "TANGAJ (P)", gyro.x, 5], ["RULIU (R)", gyro.y, 5], ["GIRARE (Y)", gyro.z, 5]].map(([label, val, maxV]) => (
-              <div key={label}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-                  <span className="font-mono" style={{ fontSize: 9, color: "rgba(0,229,255,0.5)" }}>{label}</span>
-                  <span className="font-mono" style={{ fontSize: 9, color: cardColor.primary }}>{val > 0 ? "+" : ""}{val}°</span>
-                </div>
-                <div style={{ height: 3, background: "rgba(0,229,255,0.08)", borderRadius: 2, position: "relative", overflow: "hidden" }}>
-                  <div style={{ position: "absolute", left: "50%", width: `${Math.abs(val) / maxV * 50}%`, height: "100%", background: `linear-gradient(90deg, ${cardColor.primary}, ${cardColor.secondary})`, transform: val > 0 ? "none" : "scaleX(-1)", transformOrigin: "left", borderRadius: 2 }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AIAnalysisPanel({ decision, state, data }) {
-  const colors = getStateColors(state);
+/* ══════ DECISION LOG ══════ */
+function DecisionLog({ decision, state }) {
   const [log, setLog] = useState([]);
-  const logRef = useRef([]);
-
+  const prev = useRef("");
   useEffect(() => {
-    if (!decision) return;
-    const last = logRef.current[0];
-    if (last && last.msg === decision) return;
-    const entry = { id: Date.now(), msg: decision, time: new Date().toISOString().substr(11, 8), state };
-    logRef.current = [entry, ...logRef.current.slice(0, 6)];
-    setLog([...logRef.current]);
+    if (!decision || decision === prev.current) return;
+    prev.current = decision;
+    setLog(l => [{
+      id: Date.now(),
+      msg: decision,
+      time: new Date().toLocaleTimeString("ro-RO"),
+      state,
+    }, ...l].slice(0, 8));
   }, [decision, state]);
 
   return (
-    <div className="glass holo" style={{ padding: "16px", border: `1px solid ${colors.border}`, boxShadow: `0 0 20px ${colors.glow}, inset 0 0 30px ${colors.dim}` }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <div style={{ width: 8, height: 8, borderRadius: "50%", background: colors.primary, boxShadow: `0 0 8px ${colors.primary}`, animation: "blink-crit 1.5s infinite" }} />
-        <span className="font-mono" style={{ fontSize: 10, color: colors.primary, letterSpacing: 3 }}>MOTOR DE DECIZIE IA v3.1</span>
-      </div>
-      {/* Decizie curentă */}
-      <div style={{ background: "rgba(0,229,255,0.04)", border: `1px solid ${colors.border}`, borderRadius: 8, padding: "10px 12px", marginBottom: 10 }}>
-        <div className="font-mono" style={{ fontSize: 9, color: "rgba(0,229,255,0.4)", marginBottom: 5, letterSpacing: 2 }}>DIRECTIVĂ ACTIVĂ</div>
-        <div className="font-raj" style={{ fontSize: 14, color: colors.primary, fontWeight: 600, lineHeight: 1.4 }}>{decision}</div>
-      </div>
-      {/* Mini-grid metrici */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 10 }}>
-        {[
-          ["TERMIC", `${data.temperature}°C`, data.temperature > 30],
-          ["PROXIM.", `${data.distance}cm`, data.distance < 50],
-          ["STABIL.", data.orientation, data.orientation === "INSTABIL"],
-        ].map(([label, val, warn]) => (
-          <div key={label} style={{ background: "rgba(0,0,0,0.3)", border: `1px solid ${warn ? "rgba(255,170,0,0.3)" : "rgba(0,229,255,0.1)"}`, borderRadius: 6, padding: "6px 8px", textAlign: "center" }}>
-            <div className="font-mono" style={{ fontSize: 10, color: "rgba(0,229,255,0.4)", letterSpacing: 1 }}>{label}</div>
-            <div className="font-mono" style={{ fontSize: 11, color: warn ? "#ffaa00" : "#00e5ff", fontWeight: 700 }}>{val}</div>
-          </div>
-        ))}
-      </div>
-      {/* Log */}
-      <div className="font-mono" style={{ fontSize: 9, color: "rgba(0,229,255,0.3)", marginBottom: 5, letterSpacing: 2 }}>JURNAL DECIZII</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 120, overflowY: "auto" }}>
-        {log.map((e, i) => {
-          const c = getStateColors(e.state);
-          return (
-            <div key={e.id} className="slide-in" style={{ display: "flex", gap: 6, alignItems: "flex-start", opacity: 1 - i * 0.12 }}>
-              <span className="font-mono" style={{ fontSize: 9, color: "rgba(0,229,255,0.3)", whiteSpace: "nowrap", flexShrink: 0 }}>{e.time}</span>
-              <span className="font-mono" style={{ fontSize: 9, color: i === 0 ? c.primary : "rgba(0,229,255,0.4)" }}>▶ {e.msg}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function AlertPanel({ data, state }) {
-  const colors = getStateColors(state);
-
-  const alerts = [];
-
-  if (data.temperature > 34)
-    alerts.push({
-      sev: "CRITIC",
-      msg: "SUPRAÎNCĂLZIRE — Protocol de răcire activat",
-      icon: "⚠"
-    });
-
-  else if (data.temperature > 30)
-    alerts.push({
-      sev: "AVERTIZARE",
-      msg: "Temperatură ridicată — Monitorizare necesară",
-      icon: "!"
-    });
-
-  if (data.distance < 25)
-    alerts.push({
-      sev: "CRITIC",
-      msg: "COLIZIUNE IMINENTĂ — Manevrată de evitare activă",
-      icon: "⚠"
-    });
-
-  else if (data.distance < 50)
-    alerts.push({
-      sev: "AVERTIZARE",
-      msg: "Alertă proximitate — Obiect detectat",
-      icon: "!"
-    });
-
-  if (data.orientation === "INSTABIL")
-    alerts.push({
-      sev: "CRITIC",
-      msg: "INSTABILITATE ORBITALĂ — Stabilizare activată",
-      icon: "⚠"
-    });
-
-  if (alerts.length === 0)
-    alerts.push({
-      sev: "OK",
-      msg: "Toate sistemele funcționează nominal",
-      icon: "✓"
-    });
-
-  return (
-    <div
-      className="glass holo"
-      style={{
-        padding: "16px",
-        border: `1px solid ${colors.border}`,
-        boxShadow: `0 0 20px ${colors.glow}`
-      }}
-    >
-      <div
-        className="font-mono"
-        style={{
-          fontSize: 12,
-          color: colors.primary,
-          letterSpacing: 4,
-          marginBottom: 14,
-          textAlign: "center",
-          fontWeight: 700
-        }}
-      >
-        SISTEM DE ALERTE
-      </div>
-
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: 10
-        }}
-      >
-        {alerts.map((a, i) => {
-
-          const ac =
-            a.sev === "CRITIC"
-              ? getStateColors("CRITIC")
-              : a.sev === "AVERTIZARE"
-              ? getStateColors("AVERTIZARE")
-              : {
-                  primary: "#00ff88",
-                  border: "rgba(0,255,136,0.3)",
-                  glow: "rgba(0,255,136,0.2)",
-                  dim: "rgba(0,255,136,0.05)"
-                };
-
-          return (
-            <div
-              key={i}
-              className={a.sev === "CRITIC" ? "blink-crit" : ""}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-
-                gap: 14,
-
-                padding: "16px",
-
-                minHeight: 90,
-
-                background: ac.dim,
-
-                border: `1px solid ${ac.border}`,
-
-                borderRadius: 8,
-
-                textAlign: "center",
-
-                boxShadow:
-                  a.sev === "CRITIC"
-                    ? `0 0 14px ${ac.glow}`
-                    : `0 0 8px ${ac.glow}`
-              }}
-            >
-              <span
-                style={{
-                  color: ac.primary,
-                  fontSize: 24,
-                  flexShrink: 0,
-
-                  textShadow: `0 0 10px ${ac.glow}`
-                }}
-              >
-                {a.icon}
-              </span>
-
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-
-                  alignItems: "center",
-
-                  justifyContent: "center",
-
-                  gap: 6
-                }}
-              >
-                <div
-                  className="font-mono"
-                  style={{
-                    fontSize: 11,
-
-                    color: ac.primary,
-
-                    letterSpacing: 2,
-
-                    fontWeight: 700
-                  }}
-                >
-                  [{a.sev}]
-                </div>
-
-                <div
-                  className="font-raj"
-                  style={{
-                    fontSize: 15,
-
-                    color:
-                      a.sev === "OK"
-                        ? ac.primary
-                        : "rgba(220,240,255,0.95)",
-
-                    fontWeight: 600,
-
-                    lineHeight: 1.4,
-
-                    maxWidth: 280
-                  }}
-                >
-                  {a.msg}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function ServoPanel({ servo, state }) {
-  const colors = getStateColors(state);
-  return (
-    <div className="glass holo" style={{ padding: "16px", border: `1px solid ${colors.border}`, boxShadow: `0 0 20px ${colors.glow}` }}>
-      <div className="font-mono" style={{ fontSize: 10, color: colors.primary, letterSpacing: 3, marginBottom: 12 }}>ACTUATORI SERVO</div>
-      {[["ROTATIE (PAN)", servo.pan, 180], ["INCLINARE (TILT)", servo.tilt, 90]].map(([label, val, max]) => (
-        <div key={label} style={{ marginBottom: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-            <span className="font-raj" style={{ fontSize: 13, color: "rgba(180,220,255,0.7)", fontWeight: 600 }}>{label}</span>
-            <span className="font-orb" style={{ fontSize: 14, color: colors.primary }}>{val}°</span>
-          </div>
-          <div style={{ position: "relative", height: 6, background: "rgba(0,229,255,0.08)", borderRadius: 3, overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${(val / max) * 100}%`, background: `linear-gradient(90deg, ${colors.secondary}, ${colors.primary})`, borderRadius: 3, transition: "width 0.5s ease", boxShadow: `0 0 8px ${colors.glow}` }} />
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 3 }}>
-            <span className="font-mono" style={{ fontSize: 10, color: "rgba(0,229,255,0.3)" }}>0°</span>
-            <span className="font-mono" style={{ fontSize: 10, color: "rgba(0,229,255,0.3)" }}>{max}°</span>
-          </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      {log.length === 0 && (
+        <span style={{ fontSize: 12, color: "#94a3b8", fontFamily: "DM Mono, monospace" }}>— în așteptare —</span>
+      )}
+      {log.map((e, i) => (
+        <div key={e.id} style={{
+          display: "flex", gap: 10, alignItems: "flex-start",
+          opacity: 1 - i * 0.1,
+          animation: i === 0 ? "slideIn 0.3s ease" : "none",
+          paddingBottom: i < log.length - 1 ? 5 : 0,
+          borderBottom: i < log.length - 1 ? "1px solid #f1f5f9" : "none",
+        }}>
+          <span style={{ fontSize: 9, fontFamily: "DM Mono, monospace", color: "#94a3b8", whiteSpace: "nowrap", paddingTop: 1 }}>{e.time}</span>
+          <span style={{ fontSize: 11, fontFamily: "Epilogue, sans-serif", color: i === 0 ? "#0f172a" : "#64748b", lineHeight: 1.5 }}>{e.msg}</span>
         </div>
       ))}
     </div>
   );
 }
 
-function SystemStatusHeader({ state, uptime, connected, risk }) {
-  const colors = getStateColors(state);
-  const uptimeStr = (() => {
-    const s = uptime || 0; const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); const sec = s % 60;
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-  })();
-
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 20px", background: "rgba(0,0,0,0.6)", backdropFilter: "blur(20px)", borderBottom: `1px solid ${colors.border}`, position: "relative", zIndex: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 6, height: 6, borderRadius: "50%", background: colors.primary, boxShadow: `0 0 10px ${colors.primary}`, animation: state === "CRITIC" ? "blink-crit 0.5s infinite" : "blink-crit 2s infinite" }} />
-          <span className="font-orb" style={{ fontSize: 18, fontWeight: 900, color: colors.primary, letterSpacing: 2, textShadow: `0 0 20px ${colors.glow}` }}>QUARTZ</span>
-          <span className="font-mono" style={{ fontSize: 9, color: "rgba(0,229,255,0.4)", letterSpacing: 3, marginTop: 1 }}>Digital Twin</span>
-        </div>
-        <div style={{ height: 20, width: 1, background: "rgba(0,229,255,0.2)" }} />
-        <div className="font-mono" style={{ fontSize: 10, color: "rgba(0,229,255,0.5)" }}>MISSION QUARTZ / AI ACTIVE</div>
-      </div>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-        {/* Badge stare */}
-        <div style={{ padding: "5px 14px", border: `1px solid ${colors.primary}`, borderRadius: 4, background: colors.dim, boxShadow: `0 0 12px ${colors.glow}` }}>
-          <span className={`font-orb ${state === "CRITIC" ? "blink-crit" : ""}`} style={{ fontSize: 12, fontWeight: 700, color: colors.primary, letterSpacing: 2 }}>{state}</span>
-        </div>
-        {/* Uptime */}
-        <div style={{ textAlign: "center" }}>
-          <div className="font-mono" style={{ fontSize: 9, color: "rgba(0,229,255,0.3)", letterSpacing: 1 }}>UPTIME</div>
-          <div className="font-mono" style={{ fontSize: 12, color: "#00e5ff" }}>{uptimeStr}</div>
-        </div>
-        {/* Conexiune */}
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-          <div style={{ width: 5, height: 5, borderRadius: "50%", background: connected ? "#00ff88" : "#ff4466", boxShadow: `0 0 8px ${connected ? "#00ff88" : "#ff4466"}` }} />
-          <span className="font-mono" style={{ fontSize: 9, color: connected ? "#00ff88" : "#ff4466" }}>{connected ? "LIVE" : "SIM"}</span>
-        </div>
-        {/* Risc */}
-        <div style={{ textAlign: "center" }}>
-          <div className="font-mono" style={{ fontSize: 9, color: "rgba(0,229,255,0.3)", letterSpacing: 1 }}>RISC</div>
-          <div className="font-mono" style={{ fontSize: 12, color: risk === "RIDICAT" ? "#ff2244" : risk === "MEDIU" ? "#ffaa00" : "#00ff88" }}>{risk}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Ticker({ data, state }) {
-  const colors = getStateColors(state);
-  const items = [
-    `TEMP ${data.temperature}°C`, `UMIDITATE ${data.humidity}%`, `PROXIMITATE ${data.distance}cm`,
-    `ORIENTARE ${data.orientation}`, `NIVEL RISC ${data.risk}`, `PAN ${data.servo?.pan ?? 90}°`, `TILT ${data.servo?.tilt ?? 45}°`,
-    `TANGAJ ${data.gyro?.x ?? 0}°`, `RULIU ${data.gyro?.y ?? 0}°`, `GIRARE ${data.gyro?.z ?? 0}°`,
-  ];
-  return (
-    <div style={{ background: "rgba(0,0,0,0.7)", borderTop: `1px solid ${colors.border}`, borderBottom: `1px solid ${colors.border}`, overflow: "hidden", height: 26, display: "flex", alignItems: "center" }}>
-      <div style={{ whiteSpace: "nowrap", animation: "ticker 50s linear infinite", display: "flex", gap: 40 }}>
-        {[...items, ...items].map((item, i) => (
-          <span key={i} className="font-mono" style={{ fontSize: 9, color: colors.primary, letterSpacing: 2, opacity: 0.8 }}>
-            ◆ {item}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function StatusBadge({ label, color }) {
-  return (
-    <div style={{ display: "inline-block", padding: "2px 8px", border: `1px solid ${color}`, borderRadius: 3, background: `${color}15`, marginTop: 4 }}>
-      <span className="font-mono" style={{ fontSize: 9, color, letterSpacing: 2 }}>{label}</span>
-    </div>
-  );
-}
-function CritAlert({ msg }) {
-  return (
-    <div className="blink-crit" style={{ marginTop: 8, padding: "5px 8px", background: "rgba(255,34,68,0.08)", border: "1px solid rgba(255,34,68,0.4)", borderRadius: 4, display: "flex", gap: 6, alignItems: "center" }}>
-      <span style={{ color: "#ff2244", fontSize: 10 }}>⚠</span>
-      <span className="font-mono" style={{ fontSize: 9, color: "#ff6680", letterSpacing: 1 }}>{msg}</span>
-    </div>
-  );
-}
-
-function MiniStat({ label, value, unit, state }) {
-  const colors = getStateColors(state);
-  return (
-    <div style={{ background: "rgba(0,0,0,0.4)", border: `1px solid ${colors.border}`, borderRadius: 8, padding: "10px 12px", textAlign: "center" }}>
-      <div className="font-mono" style={{ fontSize: 10, color: "rgba(0,229,255,0.4)", letterSpacing: 2, marginBottom: 4 }}>{label}</div>
-      <div className="font-orb" style={{ fontSize: 18, fontWeight: 700, color: colors.primary, lineHeight: 1 }}>{value}</div>
-      {unit && <div className="font-mono" style={{ fontSize: 10, color: "rgba(0,229,255,0.4)", marginTop: 2 }}>{unit}</div>}
-    </div>
-  );
-}
-
+/* ══════════════════════════════════════════
+   APP
+══════════════════════════════════════════ */
 export default function App() {
-  const { data, history, connected } = useTelemetry();
-  const { state } = data;
-  const colors = getStateColors(state);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const { data, connected } = useTelemetry();
+  const state = data.state ?? "STABIL";
+  const sc = stateColor(state);
+  const gyro = data.gyro ?? { x: 0, y: 0, z: 0 };
+  const servo = data.servo ?? { pan: 90, tilt: 45 };
+  const ts = sensorState(data.temperature, 30, 34);
+  const os = data.orientation === "INSTABIL" ? "CRITIC" : "STABIL";
+
+  const alerts = [];
+  const sendCommand = async (command) => {
+    try {
+      await fetch("http://172.20.10.13:5000/command", {
+        method: "POST",
+
+        headers: {
+          "Content-Type": "application/json",
+        },
+
+        body: JSON.stringify({
+          command,
+        }),
+      });
+
+    } catch (err) {
+
+      console.error(err);
+    }
+  };
+
+  if (data.temperature > 34)
+  if (data.temperature > 34) alerts.push({ msg: "Supraîncălzire — protocol răcire activ", sev: "CRITIC", color: "#dc2626" });
+  else if (data.temperature > 30) alerts.push({ msg: "Temperatură ridicată — monitorizare activă", sev: "AVERTIZARE", color: "#d97706" });
+  if ((data.distance ?? 100) < 25) alerts.push({ msg: "Coliziune iminentă — evitare activă", sev: "CRITIC", color: "#dc2626" });
+  else if ((data.distance ?? 100) < 50) alerts.push({ msg: "Obiect detectat în proximitate", sev: "AVERTIZARE", color: "#d97706" });
+  if (data.orientation === "INSTABIL") alerts.push({ msg: "Instabilitate orbitală — stabilizare în curs", sev: "CRITIC", color: "#dc2626" });
+  if (alerts.length === 0) alerts.push({ msg: "Toate sistemele funcționează nominal", sev: "STABIL", color: "#16a34a" });
 
   return (
     <>
-      <style>{css}</style>
-      <div style={{ minHeight: "100vh", position: "relative", fontFamily: "'Rajdhani', sans-serif" }}>
-        <EarthBackground state={state} />
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Epilogue:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
 
-        {/* Layout principal */}
-        <div style={{ position: "relative", zIndex: 5, display: "flex", flexDirection: "column", minHeight: "100vh" }}>
-          <SystemStatusHeader state={state} uptime={data.uptime} connected={connected} risk={data.risk} />
-          <Ticker data={data} state={state} />
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body, #root { height: 100%; }
+        body {
+          font-family: 'Epilogue', sans-serif;
+          background: #f8fafc;
+          color: #0f172a;
+          -webkit-font-smoothing: antialiased;
+        }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
 
-          {/* ── CONȚINUT ── */}
-          <div style={{ flex: 1, padding: "16px", display: "grid", gridTemplateColumns: "1fr 320px", gridTemplateRows: "auto 1fr auto", gap: 12, maxWidth: 1400, margin: "0 auto", width: "100%" }}>
+        @keyframes slideIn {
+          from { opacity: 0; transform: translateY(-5px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes critBlink {
+          0%, 100% { opacity: 1; }
+          50%       { opacity: 0.5; }
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
+        @keyframes ticker {
+          from { transform: translateX(0); }
+          to   { transform: translateX(-50%); }
+        }
+        @keyframes ping {
+          75%, 100% { transform: scale(2); opacity: 0; }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(12px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
 
-            {/* COLOANA STÂNGA */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        .card {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 16px;
+          padding: 22px 24px;
+          box-shadow: 0 1px 4px rgba(15,23,42,0.06);
+          animation: fadeIn 0.5s ease both;
+        }
+        .card-label {
+          font-family: 'DM Mono', monospace;
+          font-size: 9px;
+          letter-spacing: 0.2em;
+          color: #94a3b8;
+          text-transform: uppercase;
+          margin-bottom: 14px;
+        }
 
-              {/* SATELIT + MINI STATS */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 12, alignItems: "stretch" }}>
-                {/* Panou central satelit */}
-                <div className="glass holo" style={{ padding: "20px", border: `1px solid ${colors.border}`, boxShadow: `0 0 40px ${colors.glow}, inset 0 0 40px ${colors.dim}`, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-                  <div className="font-mono" style={{ fontSize: 9, color: colors.primary, letterSpacing: 4 }}>SAT-001 / GEMĂNARE DIGITALĂ AUTONOMĂ</div>
-                  <FloatingSatellite state={state} />
-                  <div style={{ textAlign: "center" }}>
-                    <div className={`font-orb ${state === "CRITIC" ? "blink-crit" : ""}`} style={{ fontSize: 22, fontWeight: 900, color: colors.primary, letterSpacing: 4, textShadow: `0 0 30px ${colors.glow}` }}>{state}</div>
-                    <div className="font-raj" style={{ fontSize: 11, color: "rgba(180,220,255,0.5)", marginTop: 4 }}>STARE MISIUNE</div>
-                  </div>
-                  {/* Indicatori inelari animați */}
-                  <div style={{ display: "flex", gap: 16 }}>
-                    {["TERMIC", "PROXIMITATE", "ORBITAL"].map((label, i) => {
-                      const ok = [data.temperature <= 30, data.distance >= 50, data.orientation === "STABIL"][i];
-                      const c = ok ? "#00e5ff" : "#ffaa00";
-                      return (
-                        <div key={label} style={{ textAlign: "center" }}>
-                          <div style={{ width: 10, height: 10, borderRadius: "50%", background: ok ? c : "transparent", border: `1.5px solid ${c}`, boxShadow: `0 0 8px ${c}`, margin: "0 auto 4px" }}>
-                            {!ok && <div style={{ width: "100%", height: "100%", borderRadius: "50%", background: c, animation: "blink-crit 1s infinite", opacity: 0.6 }} />}
-                          </div>
-                          <div className="font-mono" style={{ fontSize: 7, color: `${c}aa`, letterSpacing: 1 }}>{label}</div>
-                        </div>
-                      );
-                    })}
+        .grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 14px;
+        }
+        .span3 { grid-column: span 3; }
+
+        @media (max-width: 1100px) {
+          .grid { grid-template-columns: repeat(2, 1fr); }
+          .span3 { grid-column: span 2; }
+        }
+        @media (max-width: 680px) {
+          .grid { grid-template-columns: 1fr; }
+          .span3 { grid-column: span 1; }
+        }
+        @media (max-width: 480px) {
+          .sensor-summary-grid { grid-template-columns: repeat(2, 1fr) !important; }
+        }
+      `}</style>
+
+      <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#f8fafc" }}>
+
+        {/* ══ HEADER ══ */}
+        <header style={{
+          background: "#ffffff",
+          borderBottom: "1px solid #e2e8f0",
+          padding: "0 32px",
+          height: 60,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          position: "sticky", top: 0, zIndex: 100,
+          boxShadow: "0 1px 8px rgba(15,23,42,0.06)",
+        }}>
+          {/* Brand */}
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <div style={{ position: "relative", width: 32, height: 32 }}>
+              <div style={{
+                position: "absolute", inset: 0, borderRadius: "50%",
+                border: `2px solid ${sc}`,
+                animation: "spin 8s linear infinite",
+                opacity: 0.35,
+              }} />
+              <div style={{ position: "absolute", inset: 6, borderRadius: "50%", background: sc, opacity: 0.15 }} />
+              <div style={{
+                position: "absolute", top: "50%", left: "50%",
+                transform: "translate(-50%,-50%)",
+                width: 8, height: 8, borderRadius: "50%",
+                background: sc, boxShadow: `0 0 8px ${sc}`,
+              }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 17, fontWeight: 800, letterSpacing: "-0.02em", color: "#0f172a", lineHeight: 1 }}>QUARTZ</div>
+              <div style={{ fontSize: 9, fontFamily: "DM Mono, monospace", color: "#94a3b8", letterSpacing: "0.2em" }}>SAT-001 · DIGITAL TWIN</div>
+            </div>
+          </div>
+
+          {/* Center state badge */}
+          <div style={{
+            padding: "6px 20px", borderRadius: 99,
+            background: state === "CRITIC" ? "#fef2f2" : state === "AVERTIZARE" ? "#fffbeb" : "#eff6ff",
+            border: `1.5px solid ${sc}44`,
+            display: "flex", alignItems: "center", gap: 8,
+          }}>
+            <span style={{ position: "relative", display: "inline-flex", width: 8, height: 8 }}>
+              <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: sc, animation: "ping 1.5s ease infinite", opacity: 0.5 }} />
+              <span style={{ position: "relative", width: 8, height: 8, borderRadius: "50%", background: sc, display: "block" }} />
+            </span>
+            <span style={{ fontSize: 11, fontFamily: "DM Mono, monospace", letterSpacing: "0.2em", color: sc, fontWeight: 500 }}>{state}</span>
+          </div>
+
+          {/* Right */}
+          <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 8, fontFamily: "DM Mono, monospace", color: "#94a3b8", letterSpacing: "0.15em" }}>UPTIME</div>
+              <div style={{ fontSize: 13, fontFamily: "DM Mono, monospace", color: "#0f172a", fontWeight: 500 }}>{uptime(data.uptime)}</div>
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 8, fontFamily: "DM Mono, monospace", color: "#94a3b8", letterSpacing: "0.15em" }}>RISC</div>
+              <div style={{ fontSize: 13, fontFamily: "DM Mono, monospace", fontWeight: 500,
+                color: data.risk === "RIDICAT" ? "#dc2626" : data.risk === "MEDIU" ? "#d97706" : "#16a34a" }}>
+                {data.risk ?? "LOW"}
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6,
+              padding: "5px 12px", borderRadius: 99,
+              background: connected ? "#f0fdf4" : "#fef2f2",
+              border: `1px solid ${connected ? "#16a34a" : "#dc2626"}33`,
+            }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: connected ? "#16a34a" : "#dc2626" }} />
+              <span style={{ fontSize: 10, fontFamily: "DM Mono, monospace", color: connected ? "#16a34a" : "#dc2626", letterSpacing: "0.12em" }}>
+                {connected ? "LIVE" : "SIM"}
+              </span>
+            </div>
+          </div>
+        </header>
+
+        {/* ══ MAIN ══ */}
+        <main style={{ flex: 1, padding: "20px 28px 0 28px", maxWidth: 1360, margin: "0 auto", width: "100%" }}>
+
+          {/* ROW 1: 3 sensor gauges */}
+          <div className="grid" style={{ marginBottom: 14 }}>
+
+            {/* TEMPERATURĂ */}
+            <div className="card" style={{ animationDelay: "0.05s" }}>
+              <div className="card-label">Senzor Termic · DHT22</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                <Gauge value={data.temperature} min={10} max={45} unit="°C" label="TEMPERATURĂ" color={stateColor(ts)} />
+                <div style={{ flex: 1 }}>
+                  <div
+                    style={{
+                      display: "inline-block",
+                      fontSize: 9,
+                      fontFamily: "DM Mono, monospace",
+                      letterSpacing: "0.15em",
+                      color: stateColor(ts),
+                      background: `${stateColor(ts)}15`,
+                      border: `1px solid ${stateColor(ts)}33`,
+                      padding: "4px 10px",
+                      borderRadius: 4
+                    }}
+                  >
+                    {ts}
                   </div>
                 </div>
-
-                {/* Coloană mini stats */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8, alignContent: "start" }}>
-                  <MiniStat label="TEMPERATURĂ" value={data.temperature} unit="°C" state={data.temperature > 34 ? "CRITIC" : data.temperature > 30 ? "AVERTIZARE" : "STABIL"} />
-                  <MiniStat label="UMIDITATE" value={data.humidity} unit="%" state="STABIL" />
-                  <MiniStat label="DISTANȚĂ" value={data.distance} unit="cm" state={data.distance < 25 ? "CRITIC" : data.distance < 50 ? "AVERTIZARE" : "STABIL"} />
-                  <MiniStat label="ORIENTARE" value={data.orientation === "STABIL" ? "STB" : "INS"} state={data.orientation === "STABIL" ? "STABIL" : "CRITIC"} />
-                </div>
-              </div>
-
-              {/* RÂND PANOURI SENZORI */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <TemperatureCard temp={data.temperature} humidity={data.humidity} history={history} state={data.temperature > 34 ? "CRITIC" : data.temperature > 30 ? "AVERTIZARE" : "STABIL"} />
-                <DistanceRadar distance={data.distance} state={data.distance < 25 ? "CRITIC" : data.distance < 50 ? "AVERTIZARE" : "STABIL"} />
-              </div>
-
-              {/* RÂND ORBITAL + SERVO */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <OrbitalStabilityPanel gyro={data.gyro ?? { x: 0, y: 0, z: 0 }} orientation={data.orientation} state={data.orientation === "INSTABIL" ? "CRITIC" : "STABIL"} />
-                <ServoPanel servo={data.servo ?? { pan: 90, tilt: 45 }} state={state} />
               </div>
             </div>
 
-            {/* COLOANA DREAPTĂ */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <AIAnalysisPanel decision={data.decision} state={state} data={data} />
-              <AlertPanel data={data} state={state} />
+            {/* DISTANȚĂ */}
+            <div className="card" style={{ animationDelay: "0.1s" }}>
+              <div className="card-label">Proximitate · HC-SR04</div>
+              {(() => {
+                const distState = (data.distance ?? 100) < 25 ? "CRITIC" : (data.distance ?? 100) < 50 ? "AVERTIZARE" : "STABIL";
+                const dColor = stateColor(distState);
+                return (
+                  <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                    <Gauge value={data.distance ?? 0} min={0} max={150} unit="cm" label="DISTANȚĂ" color={dColor} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 10, fontFamily: "DM Mono, monospace", color: "#94a3b8", marginBottom: 4 }}>STARE</div>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: dColor, fontFamily: "DM Mono, monospace", letterSpacing: "0.1em", lineHeight: 1.4 }}>
+                        {(data.distance ?? 0) < 25 ? "COLIZIUNE\nIMINENTĂ" : (data.distance ?? 0) < 50 ? "ALERTĂ\nPROXIMITATE" : "SPAȚIU\nLIBER"}
+                      </div>
+                      <div style={{ marginTop: 12 }}>
+                        {[25, 50, 100].map(mark => (
+                          <div key={mark} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                            <span style={{ fontSize: 8, fontFamily: "DM Mono, monospace", color: "#94a3b8", width: 28 }}>{mark}cm</span>
+                            <div style={{ flex: 1, height: 4, background: "#f1f5f9", borderRadius: 99, overflow: "hidden" }}>
+                              <div style={{
+                                height: "100%",
+                                width: `${Math.min(100, ((data.distance ?? 0) / mark) * 100)}%`,
+                                background:
+                                          (data.distance ?? 0) <= mark
+                                              ? "#dc2626"
+                                              : "#0369a1",
+                                borderRadius: 99, transition: "width 0.6s ease",
+                              }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
 
-              {/* Ceas misiune */}
-              <div className="glass holo" style={{ padding: "14px", border: `1px solid ${colors.border}` }}>
-                <div className="font-mono" style={{ fontSize: 10, color: colors.primary, letterSpacing: 3, marginBottom: 10 }}>TELEMETRIE MISIUNE</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                  {[
-                    ["TELEMETRIE", connected ? "LIVE" : "MOD-SIM"],
-                    ["INTERVAL", "1000ms"],
-                    ["NIVEL RISC", data.risk],
-                    ["SERVO PAN", `${data.servo?.pan ?? 90}°`],
-                    ["SERVO TILT", `${data.servo?.tilt ?? 45}°`],
-                    ["MOTOR IA", "ONLINE"],
-                  ].map(([label, val]) => (
-                    <div key={label} style={{ background: "rgba(0,0,0,0.3)", borderRadius: 4, padding: "6px 8px" }}>
-                      <div className="font-mono" style={{ fontSize: 10, color: "rgba(0,229,255,0.35)", letterSpacing: 1 }}>{label}</div>
-                      <div className="font-mono" style={{ fontSize: 10, color: colors.primary }}>{val}</div>
+            {/* ORIENTARE */}
+            <div className="card" style={{ animationDelay: "0.15s" }}>
+              <div className="card-label">Orientare · MPU6050</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                <GyroLevel gx={gyro.x} gy={gyro.y} color={stateColor(os)} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ marginBottom: 10, display: "inline-block", fontSize: 10, fontFamily: "DM Mono, monospace",
+                    letterSpacing: "0.15em", color: stateColor(os),
+                    background: `${stateColor(os)}15`, border: `1px solid ${stateColor(os)}33`, padding: "3px 10px", borderRadius: 5 }}>
+                    {data.orientation}
+                  </div>
+                  {[["P", gyro.x], ["R", gyro.y], ["Y", gyro.z]].map(([l, v]) => (
+                    <div key={l} style={{ marginBottom: 7 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                        <span style={{ fontSize: 9, fontFamily: "DM Mono, monospace", color: "#94a3b8" }}>{l}</span>
+                        <span style={{ fontSize: 10, fontFamily: "DM Mono, monospace", color: "#0f172a", fontWeight: 500 }}>{v > 0 ? "+" : ""}{v}°</span>
+                      </div>
+                      <div style={{ height: 4, background: "#f1f5f9", borderRadius: 99, position: "relative", overflow: "hidden" }}>
+                        <div style={{
+                          position: "absolute", top: 0, height: "100%",
+                          left: v >= 0 ? "50%" : `${50 + (v / 10) * 50}%`,
+                          width: `${(Math.abs(v) / 10) * 50}%`,
+                          background: stateColor(os), borderRadius: 99, transition: "all 0.5s ease",
+                        }} />
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
-
-              {/* Vizualizare putere semnal */}
-              <div className="glass holo" style={{ padding: "14px", border: `1px solid ${colors.border}` }}>
-                <div className="font-mono" style={{ fontSize: 10, color: colors.primary, letterSpacing: 3, marginBottom: 10 }}>INTEGRITATE SEMNAL</div>
-                <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 40, justifyContent: "center" }}>
-                  {Array.from({ length: 12 }).map((_, i) => {
-                    const active = connected ? i < 9 : i < 4;
-                    const h = 8 + i * 2.5;
-                    return (
-                      <div key={i} style={{ width: 10, height: h, borderRadius: 2, background: active ? colors.primary : "rgba(0,229,255,0.1)", boxShadow: active ? `0 0 6px ${colors.glow}` : "none", transition: "background 0.5s ease" }} />
-                    );
-                  })}
-                </div>
-                <div className="font-mono" style={{ fontSize: 9, color: "rgba(0,229,255,0.4)", textAlign: "center", marginTop: 6 }}>
-                  {connected ? "PUTERNIC — 98.7% UPLINK" : "MOD SIMULARE — LOCAL"}
-                </div>
-              </div>
             </div>
           </div>
 
-          {/* SUBSOL */}
-          <div style={{ padding: "8px 20px", background: "rgba(0,0,0,0.7)", backdropFilter: "blur(10px)", borderTop: `1px solid rgba(0,229,255,0.1)`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span className="font-mono" style={{ fontSize: 9, color: "rgba(0,229,255,0.3)" }}>SISTEM AUTONOM DE GEMĂNARE DIGITALĂ SATELITARĂ — SAT-001 — BACKEND RASPBERRY PI + ESP32</span>
-            <span className="font-mono" style={{ fontSize: 9, color: "rgba(0,229,255,0.3)" }}>{new Date().toISOString().replace("T", " ").substr(0, 19)} UTC</span>
+          {/* ROW 2: SERVO + AI + ALERTS */}
+          <div className="grid" style={{ marginBottom: 14 }}>
+
+            {/* SERVO */}
+            <div className="card" style={{ animationDelay: "0.2s" }}>
+              <div className="card-label">Actuatori Servo</div>
+              <div style={{ display: "flex", justifyContent: "space-around", marginBottom: 16 }}>
+                <ServoDial value={servo.pan} max={180} label="PAN · ROTAȚIE" color="#0369a1" />
+                <ServoDial value={servo.tilt} max={90} label="TILT · ÎNCLINARE" color="#0369a1" />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {[
+                  ["INTERVAL", "1000 ms"],
+                  ["MOTOR IA", "ONLINE"],
+                  ["TELEMETRIE", connected ? "LIVE" : "SIM"],
+                  ["BACKEND", "RPI+ESP32"],
+                ].map(([l, v]) => (
+                  <div key={l} style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px" }}>
+                    <div style={{ fontSize: 8, fontFamily: "DM Mono, monospace", color: "#94a3b8", letterSpacing: "0.15em", marginBottom: 2 }}>{l}</div>
+                    <div style={{ fontSize: 12, fontFamily: "DM Mono, monospace", color: "#0f172a", fontWeight: 500 }}>{v}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* AI DECISION */}
+            <div className="card" style={{ animationDelay: "0.25s" }}>
+              <div className="card-label">Motor Decizie IA v3.1</div>
+              <div style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 14, background: "#eff6ff", border: "1px solid #bfdbfe" }}>
+                <div style={{ fontSize: 8, fontFamily: "DM Mono, monospace", color: "#3b82f6", letterSpacing: "0.2em", marginBottom: 4 }}>DIRECTIVĂ ACTIVĂ</div>
+                <div style={{ fontSize: 12, color: "#1e293b", lineHeight: 1.5 }}>{data.decision || "—"}</div>
+              </div>
+              <div className="card-label" style={{ marginBottom: 8 }}>Jurnal Decizii</div>
+              <DecisionLog decision={data.decision} state={state} />
+            </div>
+
+            {/* ALERTS + SIGNAL */}
+            <div className="card" style={{ animationDelay: "0.3s" }}>
+              <div className="card-label">Sistem Alerte</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+                {alerts.map((a, i) => <AlertPill key={i} {...a} />)}
+              </div>
+              <div style={{ marginTop: 24 }}>
+                <button
+                  onClick={() => setCommandOpen(!commandOpen)}
+
+                  style={{
+
+                    width: "100%",
+
+                    padding: "14px 18px",
+
+                    borderRadius: 14,
+
+                    border: "1px solid #0369a1",
+
+                    background: commandOpen
+                      ? "#0369a1"
+                      : "#0369a1",
+
+                    color: "white",
+
+                    cursor: "pointer",
+
+                    fontFamily: "DM Mono, monospace",
+
+                    fontSize: 11,
+
+                    letterSpacing: "0.12em",
+
+                    textTransform: "uppercase",
+
+                    transition: "all 0.25s ease",
+
+                    boxShadow: commandOpen
+                      ? "0 0 0 3px rgba(59,130,246,0.08)"
+                      : "0 1px 2px rgba(15,23,42,0.04)",
+
+                    transform: commandOpen
+                      ? "scale(1.01)"
+                      : "scale(1)",
+                  }}
+
+                  onMouseEnter={(e) => {
+
+                    e.currentTarget.style.transform =
+                      "translateY(-2px)";
+
+                    e.currentTarget.style.boxShadow =
+                      "0 8px 20px rgba(3,105,161,0.35)";
+                  }}
+
+                  onMouseLeave={(e) => {
+
+                    e.currentTarget.style.transform =
+                      commandOpen
+                        ? "scale(1.01)"
+                        : "scale(1)";
+
+                    e.currentTarget.style.boxShadow =
+                      commandOpen
+                        ? "0 0 0 3px rgba(59,130,246,0.08)"
+                        : "0 1px 2px rgba(15,23,42,0.04)";
+                  }}
+                >
+
+                  {commandOpen
+                    ? "Trimite comanda"
+                    : "Trimite comanda"}
+
+                </button>
+
+                <div
+                  style={{
+
+                    maxHeight: commandOpen
+                      ? "200px"
+                      : "0px",
+
+                    opacity: commandOpen
+                      ? 1
+                      : 0,
+
+                    overflow: "hidden",
+
+                    transition:
+                      "all 0.35s cubic-bezier(.4,0,.2,1)",
+
+                    marginTop: commandOpen
+                      ? 14
+                      : 0,
+                  }}
+                >
+
+                  <button
+
+                    onClick={() =>
+                      sendCommand("STOP_BUZZER")
+                    }
+
+                    style={{
+
+                      width: "100%",
+
+                      padding: "14px",
+
+                      borderRadius: 14,
+
+                      border: "1px solid rgba(220,38,38,0.15)",
+
+                      background: "#fef2f2",
+
+                      color: "#dc2626",
+
+                      cursor: "pointer",
+
+                      fontWeight: 700,
+
+                      fontSize: 12,
+
+                      letterSpacing: "0.08em",
+
+                      transition: "all 0.25s ease",
+
+                    }}
+
+                    onMouseEnter={(e) => {
+
+                      e.currentTarget.style.background =
+                        "#dc2626";
+
+                      e.currentTarget.style.color =
+                        "white";
+
+                      e.currentTarget.style.transform =
+                        "translateY(-2px)";
+                    }}
+
+                    onMouseLeave={(e) => {
+
+                      e.currentTarget.style.background =
+                        "#fef2f2";
+
+                      e.currentTarget.style.color =
+                        "#dc2626";
+
+                      e.currentTarget.style.transform =
+                        "translateY(0px)";
+                    }}
+                  >
+
+                    OPRIRE BUZZER
+
+                  </button>
+
+                </div>
+
+              </div>
+            </div>
+
           </div>
-        </div>
+
+          {/* ROW 3: Summary bars — full width */}
+          <div className="card span3" style={{ animationDelay: "0.35s" }}>
+            <div className="card-label">Rezumat Senzori — Valori Curente</div>
+            <div className="sensor-summary-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px 36px" }}>
+              <Bar value={data.temperature} max={45} color="#0369a1" label="TEMPERATURĂ" unit="°C" warn={30} crit={34} />
+              <Bar value={data.distance ?? 0} max={150} color="#0369a1" label="DISTANȚĂ" unit="cm" warn={50} crit={25} />
+              <Bar value={Math.round((Math.abs(gyro.x) + Math.abs(gyro.y) + Math.abs(gyro.z)) * 10) / 10} max={15} color="#0369a1" label="DEVIAȚIE GIROSCOP" unit="°" warn={5} crit={10} />
+            </div>
+          </div>
+
+        </main>
+
+        {/* ══ FOOTER ══ */}
+        <footer style={{
+          background: "#ffffff", borderTop: "1px solid #e2e8f0",
+          padding: "10px 32px",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+        }}>
+          <span style={{ fontSize: 9, fontFamily: "Epilogue, sans-serif", color: "#94a3b8", letterSpacing: "0.04em" }}>
+            SISTEM AUTONOM · SAT-001 · RASPBERRY PI + ESP32
+          </span>
+          <span style={{ fontSize: 9, fontFamily: "DM Mono, monospace", color: "#94a3b8" }}>
+            {new Date().toISOString().replace("T", " ").slice(0, 19)} UTC
+          </span>
+        </footer>
+
       </div>
     </>
   );

@@ -1,12 +1,11 @@
 #!/bin/bash
 
 echo "Pornesc backend-ul..."
-cd backend
-source ../venv/bin/activate
-python3 app.py &
+source backend/venv/bin/activate
+python backend/app.py &
 
 echo "Pornesc frontend-ul..."
-cd ../frontend
+cd frontend
 npm run dev -- --host 0.0.0.0
 
-// Pentru a porni, foloseste: ./start.sh
+// Pentru a porni, foloseste: ./start.sh npm run dev
