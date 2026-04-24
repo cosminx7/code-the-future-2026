@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-/* ══════════════════════════════════════════
-   TELEMETRY HOOK — logică backend păstrată
-══════════════════════════════════════════ */
+
 function useTelemetry() {
   const [data, setData] = useState({
     temperature: 24.5,
@@ -37,7 +35,6 @@ function useTelemetry() {
   return { data, connected };
 }
 
-/* ══════ HELPERS ══════ */
 function uptime(s = 0) {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sc = s % 60;
   return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(sc).padStart(2,"0")}`;
@@ -55,9 +52,6 @@ function sensorState(val, warn, crit) {
   return "STABIL";
 }
 
-/* ══════════════════════════════════════════
-   SVG GAUGE — arc semicircular
-══════════════════════════════════════════ */
 function Gauge({ value, min, max, unit, label, color, size = 120 }) {
   const pct = Math.max(0, Math.min(1, (value - min) / (max - min)));
   const r = 44, cx = 60, cy = 62;
@@ -94,7 +88,6 @@ function Gauge({ value, min, max, unit, label, color, size = 120 }) {
   );
 }
 
-/* ══════ HORIZONTAL BAR ══════ */
 function Bar({ value, max, color, label, unit, warn, crit }) {
   const pct = Math.max(0, Math.min(1, value / max));
   const col = label === "DISTANȚĂ" ? value <= 25 ? "#dc2626" : value <= 50 ? "#d97706" : "#0369a1" : value >= crit ? "#dc2626" : value >= warn ? "#d97706" : color;
@@ -115,7 +108,6 @@ function Bar({ value, max, color, label, unit, warn, crit }) {
   );
 }
 
-/* ══════ GYRO LEVEL ══════ */
 function GyroLevel({ gx = 0, gy = 0, color }) {
   const cx = 50, cy = 50, R = 36;
   const bx = Math.max(cx - R + 8, Math.min(cx + R - 8, cx + gy * 5));
@@ -134,7 +126,6 @@ function GyroLevel({ gx = 0, gy = 0, color }) {
   );
 }
 
-/* ══════ SERVO DIAL ══════ */
 function ServoDial({ value, max, label, color }) {
   const pct = value / max;
   const r = 28, c = 36;
@@ -154,7 +145,6 @@ function ServoDial({ value, max, label, color }) {
   );
 }
 
-/* ══════ ALERT PILL ══════ */
 function AlertPill({ msg, sev, color }) {
   return (
     <div style={{
@@ -170,7 +160,6 @@ function AlertPill({ msg, sev, color }) {
   );
 }
 
-/* ══════ DECISION LOG ══════ */
 function DecisionLog({ decision, state }) {
   const [log, setLog] = useState([]);
   const prev = useRef("");
@@ -206,9 +195,6 @@ function DecisionLog({ decision, state }) {
   );
 }
 
-/* ══════════════════════════════════════════
-   APP
-══════════════════════════════════════════ */
 export default function App() {
   const [commandOpen, setCommandOpen] = useState(false);
   const { data, connected } = useTelemetry();
@@ -327,8 +313,6 @@ export default function App() {
       `}</style>
 
       <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "#f8fafc" }}>
-
-        {/* ══ HEADER ══ */}
         <header style={{
           background: "#ffffff",
           borderBottom: "1px solid #e2e8f0",
@@ -338,7 +322,7 @@ export default function App() {
           position: "sticky", top: 0, zIndex: 100,
           boxShadow: "0 1px 8px rgba(15,23,42,0.06)",
         }}>
-          {/* Brand */}
+
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <div style={{ position: "relative", width: 32, height: 32 }}>
               <div style={{
@@ -361,7 +345,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Center state badge */}
           <div style={{
             padding: "6px 20px", borderRadius: 99,
             background: state === "CRITIC" ? "#fef2f2" : state === "AVERTIZARE" ? "#fffbeb" : "#eff6ff",
@@ -375,7 +358,6 @@ export default function App() {
             <span style={{ fontSize: 11, fontFamily: "DM Mono, monospace", letterSpacing: "0.2em", color: sc, fontWeight: 500 }}>{state}</span>
           </div>
 
-          {/* Right */}
           <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: 8, fontFamily: "DM Mono, monospace", color: "#94a3b8", letterSpacing: "0.15em" }}>UPTIME</div>
@@ -401,13 +383,8 @@ export default function App() {
           </div>
         </header>
 
-        {/* ══ MAIN ══ */}
         <main style={{ flex: 1, padding: "20px 28px 0 28px", maxWidth: 1360, margin: "0 auto", width: "100%" }}>
-
-          {/* ROW 1: 3 sensor gauges */}
           <div className="grid" style={{ marginBottom: 14 }}>
-
-            {/* TEMPERATURĂ */}
             <div className="card" style={{ animationDelay: "0.05s" }}>
               <div className="card-label">Senzor Termic · DHT22</div>
               <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -432,7 +409,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* DISTANȚĂ */}
             <div className="card" style={{ animationDelay: "0.1s" }}>
               <div className="card-label">Proximitate · HC-SR04</div>
               {(() => {
@@ -470,7 +446,6 @@ export default function App() {
               })()}
             </div>
 
-            {/* ORIENTARE */}
             <div className="card" style={{ animationDelay: "0.15s" }}>
               <div className="card-label">Orientare · MPU6050</div>
               <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -502,10 +477,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* ROW 2: SERVO + AI + ALERTS */}
           <div className="grid" style={{ marginBottom: 14 }}>
-
-            {/* SERVO */}
             <div className="card" style={{ animationDelay: "0.2s" }}>
               <div className="card-label">Actuatori Servo</div>
               <div style={{ display: "flex", justifyContent: "space-around", marginBottom: 16 }}>
@@ -527,7 +499,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* AI DECISION */}
             <div className="card" style={{ animationDelay: "0.25s" }}>
               <div className="card-label">Motor Decizie IA v3.1</div>
               <div style={{ padding: "10px 14px", borderRadius: 10, marginBottom: 14, background: "#eff6ff", border: "1px solid #bfdbfe" }}>
@@ -538,7 +509,6 @@ export default function App() {
               <DecisionLog decision={data.decision} state={state} />
             </div>
 
-            {/* ALERTS + SIGNAL */}
             <div className="card" style={{ animationDelay: "0.3s" }}>
               <div className="card-label">Sistem Alerte</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
@@ -704,7 +674,6 @@ export default function App() {
 
           </div>
 
-          {/* ROW 3: Summary bars — full width */}
           <div className="card span3" style={{ animationDelay: "0.35s" }}>
             <div className="card-label">Rezumat Senzori — Valori Curente</div>
             <div className="sensor-summary-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px 36px" }}>
@@ -716,7 +685,6 @@ export default function App() {
 
         </main>
 
-        {/* ══ FOOTER ══ */}
         <footer style={{
           background: "#ffffff", borderTop: "1px solid #e2e8f0",
           padding: "10px 32px",
