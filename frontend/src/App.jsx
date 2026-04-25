@@ -14,25 +14,66 @@ function useTelemetry() {
     decision: "Toate sistemele funcționează nominal. Menținere traiectorie.",
     uptime: 3821,
   });
+
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
     const fetchTelemetry = async () => {
       try {
-        const res = await fetch("http://172.20.10.13:5000/telemetry");
+        const res = await fetch(
+          "http://172.20.10.13:5000/telemetry"
+        );
+
         const json = await res.json();
-        setData(json);
+
+        setData(prev => ({
+            ...prev,
+            ...json,
+
+            temperature:
+              json.temperature > 0 &&
+              Math.abs(json.temperature - prev.temperature) < 8
+                ? json.temperature
+                : prev.temperature,
+
+            distance:
+                json.distance ??
+                json.distance_cm ??
+                prev.distance,
+
+          gyro:
+            json.gyro
+              ? json.gyro
+              : prev.gyro,
+
+          servo:
+            json.servo
+              ? json.servo
+              : prev.servo,
+        }));
+
         setConnected(true);
-      } catch {
+      }
+      catch {
         setConnected(false);
       }
     };
+
     fetchTelemetry();
-    const id = setInterval(fetchTelemetry, 200);
+
+    const id = setInterval(
+      fetchTelemetry,
+      500
+    );
+
     return () => clearInterval(id);
+
   }, []);
 
-  return { data, connected };
+  return {
+    data,
+    connected
+  };
 }
 
 function uptime(s = 0) {
@@ -416,7 +457,7 @@ export default function App() {
                 const dColor = stateColor(distState);
                 return (
                   <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                    <Gauge value={data.distance ?? 0} min={0} max={150} unit="cm" label="DISTANȚĂ" color={dColor} />
+                    <Gauge value={data.distance ?? 0} min={0} max={150} unit="km" label="DISTANȚĂ" color={dColor} />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 10, fontFamily: "DM Mono, monospace", color: "#94a3b8", marginBottom: 4 }}>STARE</div>
                       <div style={{ fontSize: 11, fontWeight: 600, color: dColor, fontFamily: "DM Mono, monospace", letterSpacing: "0.1em", lineHeight: 1.4 }}>
@@ -425,7 +466,7 @@ export default function App() {
                       <div style={{ marginTop: 12 }}>
                         {[25, 50, 100].map(mark => (
                           <div key={mark} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                            <span style={{ fontSize: 8, fontFamily: "DM Mono, monospace", color: "#94a3b8", width: 28 }}>{mark}cm</span>
+                            <span style={{ fontSize: 8, fontFamily: "DM Mono, monospace", color: "#94a3b8", width: 28 }}>{mark}km</span>
                             <div style={{ flex: 1, height: 4, background: "#f1f5f9", borderRadius: 99, overflow: "hidden" }}>
                               <div style={{
                                 height: "100%",
@@ -678,7 +719,7 @@ export default function App() {
             <div className="card-label">Rezumat Senzori — Valori Curente</div>
             <div className="sensor-summary-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px 36px" }}>
               <Bar value={data.temperature} max={45} color="#0369a1" label="TEMPERATURĂ" unit="°C" warn={30} crit={34} />
-              <Bar value={data.distance ?? 0} max={150} color="#0369a1" label="DISTANȚĂ" unit="cm" warn={50} crit={25} />
+              <Bar value={data.distance ?? 0} max={150} color="#0369a1" label="DISTANȚĂ" unit="km" warn={50} crit={25} />
               <Bar value={Math.round((Math.abs(gyro.x) + Math.abs(gyro.y) + Math.abs(gyro.z)) * 10) / 10} max={15} color="#0369a1" label="DEVIAȚIE GIROSCOP" unit="°" warn={5} crit={10} />
             </div>
           </div>

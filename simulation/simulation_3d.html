@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Satellite 3D Simulation</title>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+:root {
+  --hud-green:#00ff88;
+  --hud-red:#ff3333;
+  --hud-blue:#4488ff;
+  --panel-bg:rgba(0,8,20,0.82);
+}
+
+*{
+  margin:0;
+  padding:0;
+  box-sizing:border-box;
+}
+
+body{
+  overflow:hidden;
+  background:#000814;
+  font-family:'Share Tech Mono', monospace;
+  color:var(--hud-green);
+}
+
+#canvas-container{
+  position:fixed;
+  inset:0;
+}
+
+#hud{
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:10;
+}
+
+#title-bar{
+  position:fixed;
+  top:0;
+  left:0;
+  right:0;
+  text-align:center;
+  padding:8px;
+  z-index:15;
+  letter-spacing:6px;
+  font-family:'Orbitron', sans-serif;
+  color:rgba(0,255,136,.45);
+}
+
+#status-dot{
+  display:inline-block;
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  background:#00ff88;
+  margin-right:8px;
+  box-shadow:0 0 12px #00ff88;
+}
+
+#alert-banner{
+  position:fixed;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  z-index:20;
+  display:none;
+  font-family:'Orbitron', sans-serif;
+  font-size:24px;
+  letter-spacing:5px;
+  color:#ff2222;
+  text-shadow:0 0 20px red;
+  animation:blink .5s infinite;
+}
+
+.hud-panel::before,
+.hud-panel::after{
+  content:'';
+  position:absolute;
+  width:10px;
+  height:10px;
+  border-color:#00ff88;
+  border-style:solid;
+}
+
+#panel-tl::before{top:-1px;left:-1px;border-width:2px 0 0 2px;}
+#panel-tl::after{bottom:-1px;right:-1px;border-width:0 2px 2px 0;}
+
+#panel-tr::before{top:-1px;right:-1px;border-width:2px 2px 0 0;}
+#panel-tr::after{bottom:-1px;left:-1px;border-width:0 0 2px 2px;}
+
+#panel-bl::before{top:-1px;right:-1px;border-width:2px 2px 0 0;}
+#panel-bl::after{bottom:-1px;left:-1px;border-width:0 0 2px 2px;}
+
+</style>
+</head>
+<body>
+
+<div id="title-bar">
+  <span id="status-dot"></span>
+  SATELLITE 3D SIMULATION — LIVE SENSOR DATA
+</div>
+
+<div id="canvas-container"></div>
+<div id="hud"></div>
+  <div class="hud-panel" id="panel-tr">
+    <div class="hud-title">PROXIMITY & SERVO</div>
+
+    <div class="hud-row">
+      <span>Distance</span>
+      <span class="hud-val" id="val-dist">-- cm</span>
+    </div>
+
+    <div class="hud-row">
+      <span>Limit</span>
+      <span class="hud-val info">15 cm</span>
+    </div>
+
+    <div class="hud-row">
+      <span>Servo</span>
+      <span class="hud-val" id="val-servo">0°</span>
+    </div>
+
+    <div class="hud-row">
+      <span>Threat</span>
+      <span class="hud-val" id="val-threat">CLEAR</span>
+    </div>
+  </div>
+
+  <div class="hud-panel" id="panel-bl">
+    <div class="hud-title">GYROSCOPE</div>
+
+    <div class="hud-row">
+      <span>X</span>
+      <span class="hud-val info" id="val-gx">0</span>
+    </div>
+
+    <div class="hud-row">
+      <span>Y</span>
+      <span class="hud-val info" id="val-gy">0</span>
+    </div>
+
+    <div class="hud-row">
+      <span>Z</span>
+      <span class="hud-val info" id="val-gz">0</span>
+    </div>
+  </div>
+
+</div>
+
+<div id="alert-banner">
+⚠ METEOR INCOMING ⚠
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+
+const API_URL = "http://172.20.10.13:5001/api/simulation";
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(
+  60,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  2000
+);
+
+camera.position.set(0,2,6);
+
+const renderer = new THREE.WebGLRenderer({
+  antialias:true
+});
+
+renderer.setSize(window.innerWidth, window.innerHeight);
+
+document.getElementById("canvas-container")
+.appendChild(renderer.domElement);
+
+const ambient = new THREE.AmbientLight(0x404080,1);
+scene.add(ambient);
+
+const light = new THREE.DirectionalLight(0xffffff,1.5);
+light.position.set(5,5,5);
+scene.add(light);
+
+const heatLight = new THREE.PointLight(0xff0000,0,10);
+scene.add(heatLight);
+
+const starGeo = new THREE.BufferGeometry();
+const starVertices = [];
+
+for(let i=0;i<4000;i++){
+  starVertices.push(
+    (Math.random()-0.5)*2000,
+    (Math.random()-0.5)*2000,
+    (Math.random()-0.5)*2000
+  );
+}
+
+starGeo.setAttribute(
+  'position',
+  new THREE.Float32BufferAttribute(starVertices,3)
+);
+
+const stars = new THREE.Points(
+  starGeo,
+  new THREE.PointsMaterial({
+    color:0xffffff,
+    size:0.7
+  })
+);
+
+scene.add(stars);
+
+const earth = new THREE.Mesh(
+  new THREE.SphereGeometry(80,32,32),
+  new THREE.MeshPhongMaterial({
+    color:0x1f5eff
+  })
+);
+
+earth.position.set(0,-120,-200);
+scene.add(earth);
+
+const satGroup = new THREE.Group();
+scene.add(satGroup);
+
+const bodyMat = new THREE.MeshPhongMaterial({
+  color:0x8899bb,
+  emissive:0x000000
+});
+
+const body = new THREE.Mesh(
+  new THREE.BoxGeometry(1,0.6,0.8),
+  bodyMat
+);
+
+satGroup.add(body);
+
+function makePanel(x){
+
+  const g = new THREE.Group();
+
+  const panel = new THREE.Mesh(
+    new THREE.BoxGeometry(1.8,0.02,0.6),
+    new THREE.MeshPhongMaterial({
+      color:0x2244aa
+    })
+  );
+
+  g.add(panel);
+  g.position.x = x;
+
+  return g;
+}
+
+const panelL = makePanel(-1.5);
+const panelR = makePanel(1.5);
+
+satGroup.add(panelL);
+satGroup.add(panelR);
+
+const sensorMat = new THREE.MeshPhongMaterial({
+  color:0x00ff88,
+  emissive:0x003300
+});
+
+const sensor = new THREE.Mesh(
+  new THREE.BoxGeometry(.12,.12,.12),
+  sensorMat
+);
+
+sensor.position.z = 0.45;
+satGroup.add(sensor);
+
+const meteorGroup = new THREE.Group();
+
+const meteor = new THREE.Mesh(
+  new THREE.DodecahedronGeometry(.4),
+  new THREE.MeshPhongMaterial({
+    color:0x884422
+  })
+);
+
+meteorGroup.add(meteor);
+meteorGroup.visible = false;
+scene.add(meteorGroup);
+
+let sensorData = {
+  temperature:0,
+  distance_cm:100,
+  servo_angle:0,
+  gyro_x:0,
+  gyro_y:0,
+  gyro_z:0,
+  overheat:false,
+  meteor_incoming:false
+};
+
+async function fetchData(){
+
+  try{
+
+    const res = await fetch(API_URL);
+    const d = await res.json();
+
+    sensorData.temperature = d.temperature || 0;
+
+    sensorData.distance_cm =
+      d.distance_cm ??
+      d.distance ??
+      100;
+
+    sensorData.servo_angle =
+      d.servo_angle || 0;
+
+    sensorData.gyro_x =
+      d.gyro_x ?? d.gx ?? 0;
+
+    sensorData.gyro_y =
+      d.gyro_y ?? d.gy ?? 0;
+
+    sensorData.gyro_z =
+      d.gyro_z ?? d.gz ?? 0;
+
+    sensorData.overheat =
+      sensorData.temperature >= 30;
+
+    sensorData.meteor_incoming =
+      sensorData.distance_cm < 15;
+
+    updateHUD();
+
+  }catch(err){
+    console.log(err);
+  }
+}
+
+setInterval(fetchData,500);
+fetchData();
+
+function updateHUD(){
+
+  document.getElementById('val-temp')
+  .textContent =
+  sensorData.temperature.toFixed(1)+"°C";
+
+  document.getElementById('val-dist')
+  .textContent =
+  sensorData.distance_cm.toFixed(1)+" cm";
+
+  document.getElementById('val-servo')
+  .textContent =
+  sensorData.servo_angle + "°";
+
+  document.getElementById('val-gx')
+  .textContent = sensorData.gyro_x.toFixed(2);
+
+  document.getElementById('val-gy')
+  .textContent = sensorData.gyro_y.toFixed(2);
+
+  document.getElementById('val-gz')
+  .textContent = sensorData.gyro_z.toFixed(2);
+
+  const threat = document.getElementById('val-threat');
+
+  if(sensorData.meteor_incoming){
+    threat.textContent = 'DANGER';
+    threat.className = 'hud-val warn';
+  }else{
+    threat.textContent = 'CLEAR';
+    threat.className = 'hud-val ok';
+  }
+
+  const status = document.getElementById('val-status');
+
+  if(sensorData.overheat){
+    status.textContent = 'OVERHEAT';
+    status.className = 'hud-val warn';
+  }else{
+    status.textContent = 'NOMINAL';
+    status.className = 'hud-val ok';
+  }
+
+  const bar = document.getElementById('temp-bar');
+
+  bar.style.width =
+    Math.min(sensorData.temperature * 2,100)
+    + '%';
+
+}
+
+const clock = new THREE.Clock();
+
+let evade = false;
+let evadeTime = 0;
+
+function animate(){
+
+  requestAnimationFrame(animate);
+
+  const dt = clock.getDelta();
+  const t = clock.getElapsedTime();
+
+  satGroup.rotation.y += 0.002;
+
+  satGroup.rotation.x += sensorData.gyro_x * 0.0002;
+  satGroup.rotation.y += sensorData.gyro_y * 0.0002;
+  satGroup.rotation.z += sensorData.gyro_z * 0.0002;
+
+  const target = THREE.MathUtils.degToRad(sensorData.servo_angle);
+  panelL.rotation.z += (target - panelL.rotation.z) * 0.08;
+
+  let shake = 0;
+
+  if(sensorData.overheat){
+
+    shake = 0.05;
+
+    const pulse = (Math.sin(t*10)+1)/2;
+
+    bodyMat.color.setRGB(1,0.2,0.2);
+    bodyMat.emissive.setRGB(.8+pulse*.2,0,0);
+
+    heatLight.intensity = 4;
+
+    scene.fog = new THREE.FogExp2(0xff2200,.02);
+
+    stars.material.color.setHex(0xff6666);
+
+  }else{
+
+    bodyMat.color.setHex(0x8899bb);
+    bodyMat.emissive.setHex(0x000000);
+
+    heatLight.intensity = 0;
+
+    scene.fog = null;
+
+    stars.material.color.setHex(0xffffff);
+  }
+
+  if(sensorData.meteor_incoming && !evade){
+
+    evade = true;
+    evadeTime = 0;
+
+    meteorGroup.visible = true;
+    meteorGroup.position.set(10,2,0);
+
+    document.getElementById('alert-banner')
+    .style.display = 'block';
+  }
+
+  if(evade){
+
+    evadeTime += dt;
+
+    meteorGroup.position.x -= .18;
+    meteorGroup.position.y -= .03;
+
+    meteor.rotation.x += .08;
+    meteor.rotation.y += .06;
+
+    const move = Math.sin(evadeTime * 2);
+
+    satGroup.position.x = move * 2;
+    satGroup.position.y = Math.abs(move);
+    satGroup.rotation.z = move * .4;
+
+    shake += .08;
+
+    sensorMat.color.setHex(0xff0000);
+    sensorMat.emissive.setRGB(1,0,0);
+
+    if(evadeTime > 5 || !sensorData.meteor_incoming){
+
+      evade = false;
+
+      meteorGroup.visible = false;
+
+      satGroup.position.set(0,0,0);
+      satGroup.rotation.z = 0;
+
+      document.getElementById('alert-banner')
+      .style.display = 'none';
+    }
+
+  }else{
+
+    sensorMat.color.setHex(0x00ff88);
+    sensorMat.emissive.setRGB(0,.3,.1);
+  }
+
+  earth.rotation.y += dt * 0.01;
+
+  camera.position.x = Math.sin(t*.2)*6;
+  camera.position.z = Math.cos(t*.2)*6;
+  camera.position.y = 2 + Math.sin(t*.5);
+
+  camera.position.x += (Math.random()-.5)*shake;
+  camera.position.y += (Math.random()-.5)*shake;
+  camera.position.z += (Math.random()-.5)*shake;
+
+  camera.lookAt(satGroup.position);
+
+  renderer.render(scene,camera);
+}
+
+animate();
+
+window.addEventListener('resize',()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth,window.innerHeight);
+});
+
+</script>
+
+</body>
+</html>
+
